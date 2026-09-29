@@ -110,7 +110,9 @@ def _coerce_to_reference(df: pd.DataFrame, context: TabularDataContext) -> pd.Da
 
     Counterfactual methods can return integral values as floats.  A column
     with an integer reference dtype goes back to that dtype when all values
-    are integral.  Other columns keep their values.
+    are integral.  Another column takes the reference dtype only when the
+    conversion keeps every value: a cast to a categorical dtype turns an
+    unknown category into a missing value, so such a column keeps its values.
     """
     missing = [column for column in context.columns if column not in df.columns]
     if missing:
@@ -127,10 +129,13 @@ def _coerce_to_reference(df: pd.DataFrame, context: TabularDataContext) -> pd.Da
                 out[column] = np.round(numeric).astype(dtype)
             continue
         try:
-            out[column] = values.astype(dtype)
+            converted = values.astype(dtype)
         except (TypeError, ValueError):
             # Keep the values: the pipeline reports a clear error if needed.
             continue
+        if (converted.isna() & values.notna()).any():
+            continue
+        out[column] = converted
     return out
 
 

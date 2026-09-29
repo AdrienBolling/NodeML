@@ -70,6 +70,18 @@ class TestCoerceToReference:
         )
         assert out["c"].dtype == np.float64
 
+    def test_unknown_category_is_not_turned_into_nan(self) -> None:
+        # A cast to a categorical dtype turns an unknown category into NaN.
+        context = TabularDataContext(
+            columns=["color"],
+            dtypes=[pd.CategoricalDtype(["red", "blue"])],
+            categories=[CategoricalData],
+        )
+        unknown = _coerce_to_reference(pd.DataFrame({"color": ["green"]}), context)
+        assert unknown["color"].tolist() == ["green"]
+        known = _coerce_to_reference(pd.DataFrame({"color": ["blue"]}), context)
+        assert isinstance(known["color"].dtype, pd.CategoricalDtype)
+
     def test_missing_column_raises(self) -> None:
         with pytest.raises(NodeInputError, match="no columns"):
             _coerce_to_reference(pd.DataFrame({"a": [0.5]}), _CONTEXT)

@@ -9,7 +9,7 @@ These helpers do not capture the full fitted state: some estimators also
 keep private attributes (for example ``_loss`` in gradient boosting).  To
 save and restore an estimator, pickle the estimator object itself.  The
 model nodes use these helpers only to show the fitted attributes and to
-read params saved by NodeML 0.1.
+read params saved by NodeML 0.1.0.
 """
 
 from typing import Any

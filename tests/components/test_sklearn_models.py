@@ -299,7 +299,7 @@ class TestSaveAndLoad:
         pd.testing.assert_frame_equal(actual, expected)
 
     def test_set_params_reads_the_format_of_older_versions(self) -> None:
-        """Params saved by NodeML 0.1 hold only the public fitted attributes."""
+        """Params saved by NodeML 0.1.0 hold only the public fitted attributes."""
         X_pair, y_pair = _pairs("LinearRegression")
         node = _node("LinearRegression")
         node.fit(_numpy_inputs(X_pair, y_pair))

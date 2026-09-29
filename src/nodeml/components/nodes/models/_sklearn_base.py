@@ -200,7 +200,7 @@ class SklearnModelNode(
     def set_params(self, params: SklearnParams) -> None:
         """Restore the fitted state from :meth:`get_params` output.
 
-        Params saved by NodeML 0.1 have no ``"estimator"`` key.  For them,
+        Params saved by NodeML 0.1.0 have no ``"estimator"`` key.  For them,
         the public fitted attributes go onto a new estimator.
 
         Args:

@@ -213,24 +213,49 @@ def _run_method(
     return predictor, view, raw
 
 
-def _baseline_error(
+def _error_result(
     scenario: CounterfactualScenario,
     sample_id: str,
     sample: pd.DataFrame,
     message: str | None,
+    baseline: float | None = None,
 ) -> SampleResult:
-    """Return the result for a sample without a baseline prediction."""
+    """Return an ``"error"`` result for a sample, without counterfactuals.
+
+    Args:
+        scenario: The scenario.
+        sample_id: Identifier of the sample.
+        sample: The sample, as one row.
+        message: The error message.
+        baseline: The baseline prediction, if the sample has one.
+
+    """
     return SampleResult(
         scenario=scenario.name,
         method=scenario.method,
         sample_id=sample_id,
         original=row_to_dict(frame_rows(sample)[0]),
-        baseline_prediction=None,
-        target_range=None,
+        baseline_prediction=baseline,
+        target_range=None if baseline is None else scenario.target.resolve(baseline),
         status="error",
         message=message,
         runtime_s=0.0,
     )
+
+
+def _task_error(
+    task: tuple[CounterfactualScenario, str, pd.DataFrame, float], exc: BaseException
+) -> SampleResult:
+    """Return the ``"error"`` result of a task that raised *exc*."""
+    scenario, sample_id, sample, baseline = task
+    message = f"The task failed: {type(exc).__name__}: {exc}"
+    _log.warning(
+        "Counterfactual task failed",
+        scenario=scenario.name,
+        sample_id=sample_id,
+        error=message,
+    )
+    return _error_result(scenario, sample_id, sample, message, baseline)
 
 
 def explain_sample(
@@ -287,6 +312,7 @@ def explain_sample(
         )
 
     start = time.perf_counter()
+    failure: tuple[SampleStatus, str] | None = None
     try:
         # BugDoc and other libraries configure the root logger during a run.
         with guard_root_logger():
@@ -295,48 +321,55 @@ def explain_sample(
             )
             frozen = view.frozen
     except celia.InstancesAreWithinRangeError as exc:
-        return result("already_in_range", time.perf_counter() - start, str(exc))
+        failure = ("already_in_range", str(exc))
     except celia.NoCounterfactualsFoundError as exc:
-        return result("not_found", time.perf_counter() - start, str(exc))
+        failure = ("not_found", str(exc))
     except Exception as exc:  # noqa: BLE001 - one failed task must not stop the evaluation
         if _is_empty_dice_result(exc):
-            return result(
-                "not_found",
-                time.perf_counter() - start,
-                "DiCE found no counterfactual.",
+            failure = ("not_found", "DiCE found no counterfactual.")
+        else:
+            failure = ("error", f"{type(exc).__name__}: {exc}")
+            _log.warning(
+                "Counterfactual method failed",
+                scenario=scenario.name,
+                sample_id=sample_id,
+                error=failure[1],
             )
-        _log.warning(
-            "Counterfactual method failed",
-            scenario=scenario.name,
-            sample_id=sample_id,
-            error=f"{type(exc).__name__}: {exc}",
-        )
-        return result(
-            "error", time.perf_counter() - start, f"{type(exc).__name__}: {exc}"
-        )
     runtime = time.perf_counter() - start
+    if failure is not None:
+        return result(failure[0], runtime, failure[1])
 
     frames = [frame for frame in counterfactual_rows(raw) if not frame.empty]
     if not frames:
         return result("not_found", runtime, "The method returned no counterfactual.")
-    candidates = view.from_celia(pd.concat(frames, ignore_index=True))
-    # Predict again with the pipeline: one rule for all methods.
-    predictions = predictor.predict_frame(candidates)
-    records = [
-        score_counterfactual(
-            index,
-            original,
-            candidate,
-            float(prediction),
-            target_range,
-            continuous=context.continuous,
-            scales=context.scales,
-            constraints=constraints,
+    try:
+        candidates = view.from_celia(pd.concat(frames, ignore_index=True))
+        # Predict again with the pipeline: one rule for all methods.
+        predictions = predictor.predict_frame(candidates)
+        records = [
+            score_counterfactual(
+                index,
+                original,
+                candidate,
+                float(prediction),
+                target_range,
+                continuous=context.continuous,
+                scales=context.scales,
+                constraints=constraints,
+            )
+            for index, (candidate, prediction) in enumerate(
+                zip(frame_rows(candidates), predictions, strict=True)
+            )
+        ]
+    except Exception as exc:  # noqa: BLE001 - one bad result must not stop the evaluation
+        message = f"The counterfactuals cannot be scored: {type(exc).__name__}: {exc}"
+        _log.warning(
+            "Counterfactual scoring failed",
+            scenario=scenario.name,
+            sample_id=sample_id,
+            error=message,
         )
-        for index, (candidate, prediction) in enumerate(
-            zip(frame_rows(candidates), predictions, strict=True)
-        )
-    ]
+        return result("error", runtime, message)
     return result("found", runtime, records=records)
 
 
@@ -555,7 +588,7 @@ class CounterfactualEvaluator:
                 sample = rows.iloc[[position]]
                 baseline, error = baselines[position]
                 if baseline is None:
-                    results.append(_baseline_error(scenario, sample_id, sample, error))
+                    results.append(_error_result(scenario, sample_id, sample, error))
                 else:
                     results.append(None)
                     tasks.append((scenario, sample_id, sample, baseline))
@@ -681,9 +714,19 @@ class CounterfactualEvaluator:
         context: _TaskContext,
         tasks: list[tuple[CounterfactualScenario, str, pd.DataFrame, float]],
     ) -> list[SampleResult]:
-        """Run the tasks with Ray, or one after the other in this process."""
+        """Run the tasks with Ray, or one after the other in this process.
+
+        A task that raises gives an ``"error"`` result.  The other tasks keep
+        their results.
+        """
         if not self._config.use_ray:
-            return [explain_sample(context, *task) for task in tasks]
+            results = []
+            for task in tasks:
+                try:
+                    results.append(explain_sample(context, *task))
+                except Exception as exc:  # noqa: BLE001 - isolate the failing task
+                    results.append(_task_error(task, exc))
+            return results
         if not ray.is_initialized():
             ray.init(
                 ignore_reinit_error=True,
@@ -695,4 +738,12 @@ class CounterfactualEvaluator:
             num_cpus=self._config.num_cpus_per_task
         )
         futures = [remote.remote(context_ref, *task) for task in tasks]
-        return list(ray.get(futures))
+        results = []
+        # ray.get on the whole list raises for the first failed task and
+        # loses the other results, so get each result on its own.
+        for task, future in zip(tasks, futures, strict=True):
+            try:
+                results.append(ray.get(future))
+            except Exception as exc:  # noqa: BLE001 - isolate the failing task
+                results.append(_task_error(task, exc))
+        return results

@@ -241,6 +241,52 @@ class TestMissingValuesAndEmptyResults:
         assert report.results[0].status == "not_found"
 
 
+class TestFailureIsolation:
+    def test_a_scoring_failure_is_an_error_result(
+        self, numeric_case: TrainedCase, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from nodeml.core.pipeline.counterfactuals import evaluator as evaluator_module
+
+        def broken(*args: object, **kwargs: object) -> None:
+            _ = args, kwargs
+            msg = "the pipeline rejects a generated value"
+            raise ValueError(msg)
+
+        monkeypatch.setattr(evaluator_module, "score_counterfactual", broken)
+        report = _evaluator(numeric_case).evaluate(
+            [_dice()],
+            samples=numeric_case.X.iloc[:2],
+            reference_input=numeric_case.reference_input,
+        )
+        assert [result.status for result in report.results] == ["error", "error"]
+        assert "cannot be scored" in (report.results[0].message or "")
+
+    def test_a_failing_task_does_not_stop_the_others(
+        self, numeric_case: TrainedCase, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from nodeml.core.pipeline.counterfactuals import evaluator as evaluator_module
+
+        original = evaluator_module.explain_sample
+
+        def flaky(context, scenario, sample_id, sample, baseline):  # noqa: ANN202
+            if sample_id == "0":
+                msg = "worker crashed"
+                raise RuntimeError(msg)
+            return original(context, scenario, sample_id, sample, baseline)
+
+        monkeypatch.setattr(evaluator_module, "explain_sample", flaky)
+        report = _evaluator(numeric_case).evaluate(
+            [_dice()],
+            samples=numeric_case.X.iloc[:2],
+            reference_input=numeric_case.reference_input,
+        )
+        assert [result.status for result in report.results] == ["error", "found"]
+        failed = report.results[0]
+        assert "worker crashed" in (failed.message or "")
+        assert failed.baseline_prediction is not None
+        assert failed.target_range is not None
+
+
 class TestInputChecks:
     def test_samples_or_indices(self, numeric_case: TrainedCase) -> None:
         evaluator = _evaluator(numeric_case)
@@ -356,3 +402,29 @@ def test_ray_gives_the_same_results(
         ]
 
     assert strip(remote) == strip(local)
+
+
+def test_a_failed_ray_task_does_not_lose_the_other_results(
+    numeric_case: TrainedCase, ray_cluster: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ray
+
+    real_get = ray.get
+    calls: list[int] = []
+
+    def get_with_one_failure(ref: object, **kwargs: object) -> object:
+        calls.append(1)
+        if len(calls) == 1:
+            msg = "task lost"
+            raise RuntimeError(msg)
+        return real_get(ref, **kwargs)
+
+    monkeypatch.setattr(ray, "get", get_with_one_failure)
+    report = _evaluator(numeric_case, use_ray=True).evaluate(
+        [_dice()],
+        samples=numeric_case.X.iloc[:2],
+        reference_input=numeric_case.reference_input,
+    )
+    _ = ray_cluster
+    assert [result.status for result in report.results] == ["error", "found"]
+    assert "task lost" in (report.results[0].message or "")

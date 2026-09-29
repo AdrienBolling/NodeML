@@ -52,13 +52,10 @@ def _as_tabular(value: _PortValue, where: str) -> TabularData:
     """
     if isinstance(value, TabularData):
         return value
-    if (
-        isinstance(value, tuple)
-        and len(value) == 2  # noqa: PLR2004 - (array, context)
-        and isinstance(value[1], TabularDataContext)
-    ):
+    if isinstance(value, tuple) and len(value) == 2:  # noqa: PLR2004 - (array, context)
         data, ctx = value
-        return TabularData(data, ctx.columns, ctx.dtypes, ctx.categories)
+        if isinstance(ctx, TabularDataContext):
+            return TabularData(data, ctx.columns, ctx.dtypes, ctx.categories)
     msg = (
         "TabularTrainValSplit supports TabularData or (array, "
         f"TabularDataContext) tuples, got {type(value)} at {where}."

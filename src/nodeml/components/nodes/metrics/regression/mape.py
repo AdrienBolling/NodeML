@@ -16,20 +16,15 @@ and emits one output port:
 * ``score`` - scalar metric value ``(1, 1)`` as a numpy array
 """
 
-import numpy as np
-import torch
 from pydantic import Field
-from torchmetrics import MeanAbsolutePercentageError
+from torchmetrics import MeanAbsolutePercentageError, Metric
 
-from nodeml.core.common.data.data import (
-    ArrayLikeEnum,
-    DataCategoryEnum,
-    DataStructureEnum,
-    NumericalData,
-    TabularDataContext,
+from nodeml.components.nodes.metrics.base import score_out_ports
+from nodeml.components.nodes.metrics.regression.base import (
+    RegressionMetricNode,
+    regression_in_ports,
 )
 from nodeml.core.nodes.metrics.metric_node import (
-    MetricNode,
     MetricNodeConfig,
     MetricNodeMetadata,
     MetricNodeRunningConfig,
@@ -61,46 +56,16 @@ class MAPEConfig(MetricNodeConfig[MAPERunningConfig]):
         description="Run-time options.",
     )
     in_ports: dict[str, Port] = Field(
-        default={
-            "pred": Port(
-                arr_type=ArrayLikeEnum.NUMPY,
-                data_structure=DataStructureEnum.TABULAR,
-                data_category=DataCategoryEnum.NUMERICAL,
-                data_shape="batch targets",
-                desc="Predicted values (batch, targets).",
-            ),
-            "target": Port(
-                arr_type=ArrayLikeEnum.NUMPY,
-                data_structure=DataStructureEnum.TABULAR,
-                data_category=DataCategoryEnum.NUMERICAL,
-                data_shape="batch targets",
-                desc="Ground-truth target values (batch, targets).",
-            ),
-        },
+        default=regression_in_ports(),
         description="Input ports: 'pred' (predictions) and 'target' (ground truth).",
     )
     out_ports: dict[str, Port] = Field(
-        default={
-            "score": Port(
-                arr_type=ArrayLikeEnum.NUMPY,
-                data_structure=DataStructureEnum.TABULAR,
-                data_category=DataCategoryEnum.NUMERICAL,
-                data_shape="1 1",
-                desc="Scalar metric value.",
-            ),
-        },
+        default=score_out_ports("Scalar metric value."),
         description="Output ports: 'score' (scalar metric value).",
     )
 
 
-class MAPE(
-    MetricNode[
-        np.ndarray,
-        TabularDataContext,
-        np.ndarray,
-        TabularDataContext,
-    ]
-):
+class MAPE(RegressionMetricNode):
     """Mean Absolute Percentage Error metric node.
 
     Converts numpy inputs to torch tensors, delegates to
@@ -109,41 +74,13 @@ class MAPE(
     """
 
     metadata = MAPEMetadata()
+    score_name = "mape"
 
-    def __init__(self, *, config: MAPEConfig) -> None:
-        """Initialise the node with its configuration."""
-        self._config = config
-        self._metric = MeanAbsolutePercentageError()
+    def _build_metric(self) -> Metric:
+        """Build the torchmetrics metric.
 
-    # --- MetricNode interface ------------------------------------------------
+        Returns:
+            A ``MeanAbsolutePercentageError`` metric.
 
-    def update(self, data: dict[str, tuple[np.ndarray, TabularDataContext]]) -> None:
-        """Feed predictions and targets into the torchmetrics accumulator."""
-        pred, _ = data["pred"]
-        target, _ = data["target"]
-        self._metric.update(
-            torch.from_numpy(np.ascontiguousarray(pred)).float(),
-            torch.from_numpy(np.ascontiguousarray(target)).float(),
-        )
-
-    def compute(self) -> dict[str, tuple[np.ndarray, TabularDataContext]]:
-        """Compute MAPE and return a ``(1, 1)`` result array."""
-        value = self._metric.compute().item()
-        self._metric.reset()
-        return _scalar_result(value, "mape")
-
-
-def _scalar_result(
-    value: float, col_name: str
-) -> dict[str, tuple[np.ndarray, TabularDataContext]]:
-    """Wrap a scalar metric value into the port-compatible output format."""
-    return {
-        "score": (
-            np.array([[value]], dtype=np.float64),
-            TabularDataContext(
-                columns=[col_name],
-                dtypes=[np.dtype("float64")],
-                categories=[NumericalData],
-            ),
-        ),
-    }
+        """
+        return MeanAbsolutePercentageError()

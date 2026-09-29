@@ -6,7 +6,7 @@ from enum import StrEnum
 from functools import wraps
 from typing import Any, override
 
-from pydantic import BaseModel, PrivateAttr
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from nodeml.core.common.data.data import (
     ArrayLikeEnum,
@@ -76,6 +76,10 @@ class Port(BaseModel):
     optional: bool = False
     desc: str
     mode: list[NodeExecutionMode] = [NodeExecutionMode.ALL]
+
+    # Validate assignments too, so that port.mode = ["training"] stores
+    # enum members and a wrong value fails at once.
+    model_config = ConfigDict(validate_assignment=True)
 
 
 class NodeConfig(BaseModel):

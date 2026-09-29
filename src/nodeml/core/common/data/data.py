@@ -1,6 +1,6 @@
 """Module for the base types of data in the NodeML Framework."""
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -140,7 +140,7 @@ def infer_category(dtype: object) -> type[DataCategory]:
     return MixedData
 
 
-def _check_column_names(expected: Sequence[object], actual: Sequence[object]) -> None:
+def _check_column_names(expected: Iterable[object], actual: Iterable[object]) -> None:
     """Raise if the context names *expected* differ from the data names *actual*."""
     expected_names = [str(col) for col in expected]
     actual_names = [str(col) for col in actual]
@@ -259,7 +259,7 @@ class TabularDataContext(DataContext):
         ]
         return TabularDataContext(columns=columns, dtypes=dtypes, categories=categories)
 
-    def check_columns(self, columns: Sequence[object]) -> None:
+    def check_columns(self, columns: Iterable[object]) -> None:
         """Check that the context lists exactly *columns*, in the same order.
 
         Args:

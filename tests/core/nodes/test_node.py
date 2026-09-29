@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from nodeml.core.common.data.data import ArrayLikeEnum, DataCategoryEnum
 from nodeml.core.common.enums import NodeExecutionMode
 from nodeml.core.nodes.node import NodeConfig, NodeType, Port
 from tests.shims.nodes import (
@@ -164,3 +165,28 @@ class TestNodeLifecycle:
 
             class _Wrong(_Mixin, IdentityTransform):  # type: ignore[misc]
                 pass
+
+
+class TestPortAssignment:
+    def test_assigned_modes_are_validated(self) -> None:
+        port = Port(
+            arr_type=ArrayLikeEnum.PANDAS,
+            data_category=DataCategoryEnum.NUMERICAL,
+            data_shape="batch feature",
+            desc="test",
+        )
+        port.mode = ["training", "evaluation"]  # type: ignore[assignment]
+        assert port.mode == [NodeExecutionMode.TRAINING, NodeExecutionMode.EVALUATION]
+        assert all(isinstance(mode, NodeExecutionMode) for mode in port.mode)
+
+    def test_an_unknown_mode_is_rejected(self) -> None:
+        from pydantic import ValidationError
+
+        port = Port(
+            arr_type=ArrayLikeEnum.PANDAS,
+            data_category=DataCategoryEnum.NUMERICAL,
+            data_shape="batch feature",
+            desc="test",
+        )
+        with pytest.raises(ValidationError):
+            port.mode = ["train"]  # type: ignore[assignment]

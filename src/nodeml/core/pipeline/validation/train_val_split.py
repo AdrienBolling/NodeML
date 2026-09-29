@@ -1,9 +1,12 @@
 """Train / validation split utility for NodeML pipelines.
 
 Operates on the ``input_data`` structure used by
-:class:`~nodeml.core.pipeline.runners.smart_runner.SmartRunner` and produces
-two copies (train and validation) that can be passed directly to
-``runner.train()`` and ``runner.evaluate()``.
+:class:`~nodeml.core.pipeline.runners.smart_runner.SmartRunner`
+(``{node_name: {port_name: (array, context)}}``) and produces two copies
+(train and validation) that can be passed directly to ``runner.train()``
+and ``runner.evaluate()``.  Values can also be :class:`TabularData`
+objects.  Entries that the config does not reference are copied unchanged
+into both outputs.
 
 Example::
 
@@ -27,7 +30,37 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
 
-from nodeml.core.common.data.data import Data, TabularData
+from nodeml.core.common.data.data import (
+    ArrayLike,
+    DataContext,
+    TabularData,
+    TabularDataContext,
+)
+
+type _PortValue = tuple[ArrayLike, DataContext] | TabularData
+type _InputData = Mapping[str, Mapping[str, _PortValue]]
+type _SplitData = dict[str, dict[str, _PortValue]]
+
+
+def _as_tabular(value: _PortValue, where: str) -> TabularData:
+    """Return *value* as :class:`TabularData`.
+
+    Raises:
+        TypeError: If *value* is neither TabularData nor an
+            ``(array, TabularDataContext)`` tuple.
+
+    """
+    if isinstance(value, TabularData):
+        return value
+    if isinstance(value, tuple) and len(value) == 2:  # noqa: PLR2004 - (array, context)
+        data, ctx = value
+        if isinstance(ctx, TabularDataContext):
+            return TabularData(data, ctx.columns, ctx.dtypes, ctx.categories)
+    msg = (
+        "TabularTrainValSplit supports TabularData or (array, "
+        f"TabularDataContext) tuples, got {type(value)} at {where}."
+    )
+    raise TypeError(msg)
 
 
 class TabularTrainValSplitConfig(BaseModel):
@@ -95,31 +128,35 @@ class TabularTrainValSplit:
         """
         self._config = config
 
-    def split(
-        self,
-        input_data: Mapping[str, Mapping[str, Data]],
-    ) -> tuple[dict[str, dict[str, Data]], dict[str, dict[str, Data]]]:
+    def split(self, input_data: _InputData) -> tuple[_SplitData, _SplitData]:
         """Split *input_data* into ``(train_data, val_data)``.
 
-        Both returned dicts have the same ``node_name -> port_name -> Data``
-        structure as the input so they can be passed directly to the runner.
+        Both returned dicts have the ``node_name -> port_name -> value``
+        structure of the runner ``input_data``, so they can be passed
+        directly to the runner.  A split value is a
+        ``(pd.DataFrame, TabularDataContext)`` tuple; an entry that the
+        config does not reference is copied unchanged.
 
         Args:
             input_data: Full dataset keyed by
-                ``{node_name: {port_name: Data}}``.
+                ``{node_name: {port_name: (array, context)}}``.  Values can
+                also be :class:`TabularData`.
 
         Returns:
-            A ``(train_data, val_data)`` tuple with the same structure as
-            the input.
+            A ``(train_data, val_data)`` tuple.
 
         """
         all_refs = self._all_refs()
-        n_rows = self._verify_row_count(input_data, all_refs)
+        tabular = {
+            (node, port): _as_tabular(input_data[node][port], f"{node}:{port}")
+            for node, port in all_refs
+        }
+        n_rows = self._verify_row_count(tabular)
 
-        train_idx, val_idx = self._compute_indices(input_data, n_rows)
+        train_idx, val_idx = self._compute_indices(tabular, n_rows)
 
-        train_data = self._apply_split(input_data, all_refs, train_idx)
-        val_data = self._apply_split(input_data, all_refs, val_idx)
+        train_data = self._apply_split(input_data, tabular, train_idx)
+        val_data = self._apply_split(input_data, tabular, val_idx)
         return train_data, val_data
 
     # ------------------------------------------------------------------
@@ -150,14 +187,10 @@ class TabularTrainValSplit:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _verify_row_count(
-        input_data: Mapping[str, Mapping[str, Data]],
-        refs: list[tuple[str, str]],
-    ) -> int:
-        """Check that every referenced Data has the same number of rows."""
+    def _verify_row_count(tabular: dict[tuple[str, str], TabularData]) -> int:
+        """Check that every referenced value has the same number of rows."""
         n_rows: int | None = None
-        for node_name, port_name in refs:
-            data = input_data[node_name][port_name]
+        for (node_name, port_name), data in tabular.items():
             rows = data.shape[0]
             if n_rows is None:
                 n_rows = rows
@@ -178,7 +211,7 @@ class TabularTrainValSplit:
 
     def _compute_indices(
         self,
-        input_data: Mapping[str, Mapping[str, Data]],
+        tabular: dict[tuple[str, str], TabularData],
         n_rows: int,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Return ``(train_indices, val_indices)``."""
@@ -186,7 +219,7 @@ class TabularTrainValSplit:
         split_point = int(n_rows * (1 - self._config.val_proportion))
 
         if self._config.best_kldiv:
-            return self._best_kldiv_split(input_data, n_rows, split_point, rng)
+            return self._best_kldiv_split(tabular, n_rows, split_point, rng)
 
         indices = np.arange(n_rows)
         if self._config.randomize:
@@ -196,13 +229,13 @@ class TabularTrainValSplit:
 
     def _best_kldiv_split(
         self,
-        input_data: Mapping[str, Mapping[str, Data]],
+        tabular: dict[tuple[str, str], TabularData],
         n_rows: int,
         split_point: int,
         rng: np.random.Generator,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Try multiple random splits and keep the one with lowest KL divergence."""
-        features = self._gather_features(input_data)
+        features = self._gather_features(tabular)
 
         best_kl = float("inf")
         best_train: np.ndarray | None = None
@@ -226,17 +259,14 @@ class TabularTrainValSplit:
 
     def _gather_features(
         self,
-        input_data: Mapping[str, Mapping[str, Data]],
+        tabular: dict[tuple[str, str], TabularData],
     ) -> pd.DataFrame:
         """Concatenate all data_nodes columns into a single DataFrame for KL computation."""
-        frames: list[pd.DataFrame] = []
-        for node_name, port_name in self._data_refs():
-            data = input_data[node_name][port_name]
-            if not isinstance(data, TabularData):
-                msg = f"best_kldiv requires TabularData, got {type(data)} at {node_name}:{port_name}."
-                raise TypeError(msg)
-            df, _ = data.to_pandas()
-            frames.append(df)
+        # Positional index: the frames of different ports are aligned by row.
+        frames = [
+            tabular[ref].to_pandas()[0].reset_index(drop=True)
+            for ref in self._data_refs()
+        ]
         return pd.concat(frames, axis=1)
 
     # ------------------------------------------------------------------
@@ -245,28 +275,20 @@ class TabularTrainValSplit:
 
     @staticmethod
     def _apply_split(
-        input_data: Mapping[str, Mapping[str, Data]],
-        refs: list[tuple[str, str]],
+        input_data: _InputData,
+        tabular: dict[tuple[str, str], TabularData],
         indices: np.ndarray,
-    ) -> dict[str, dict[str, Data]]:
-        """Slice every referenced TabularData and return a new input_data dict."""
-        result: dict[str, dict[str, Data]] = {}
-        for node_name, port_name in refs:
-            data = input_data[node_name][port_name]
-            if not isinstance(data, TabularData):
-                msg = f"TabularTrainValSplit only supports TabularData, got {type(data)} at {node_name}:{port_name}."
-                raise TypeError(msg)
+    ) -> _SplitData:
+        """Slice every referenced value and copy the other entries unchanged."""
+        result: _SplitData = {
+            node_name: dict(ports) for node_name, ports in input_data.items()
+        }
+        for (node_name, port_name), data in tabular.items():
             df, ctx = data.to_pandas()
-            sliced_df = df.iloc[indices].reset_index(drop=True)
-            sliced = TabularData(
-                data=sliced_df,
-                columns=ctx.columns,
-                dtypes=ctx.dtypes,
-                categories=ctx.categories,
+            result[node_name][port_name] = (
+                df.iloc[indices].reset_index(drop=True),
+                ctx.copy(),
             )
-            if node_name not in result:
-                result[node_name] = {}
-            result[node_name][port_name] = sliced
         return result
 
 

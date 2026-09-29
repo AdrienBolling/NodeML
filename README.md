@@ -62,6 +62,7 @@ preds = runner.infer(input_data={"source": {"X": X_pair}})
 | [`hyperparameter_tuning.ipynb`](examples/hyperparameter_tuning.ipynb) | Hyperparameter search with Ray Tune |
 | [`mlflow_logging.ipynb`](examples/mlflow_logging.ipynb) | Logging pipeline runs to MLflow |
 | [`counterfactuals.ipynb`](examples/counterfactuals.ipynb) | Counterfactual explanations with CELIA |
+| [`dice_regression.ipynb`](examples/dice_regression.ipynb) | DiCE regression with CELIA: the CELIA API, then the evaluator |
 
 ## Counterfactual explanations
 

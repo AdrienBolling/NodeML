@@ -150,10 +150,15 @@ class TorchMetricNode(
     def compute(self) -> MetricData:
         """Compute the metric and return it as a ``(1, 1)`` array.
 
+        The accumulated state does not change.
+
         Returns:
             Mapping from ``"score"`` to the value and its context.
 
         """
         value = self._metric.compute().item()
-        self._metric.reset()
         return score_result(value, self._score_name())
+
+    def reset(self) -> None:
+        """Clear the state of the torchmetrics metric."""
+        self._metric.reset()

@@ -29,3 +29,19 @@ ipynb/
 
 # Sphinx build output
 docs/_build/
+# Virtual environments
+.venv/
+
+# Test, lint and coverage caches
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+
+# MLflow tracking data produced by the examples
+mlruns/
+mlflow.db
+
+# Data that must not be published
+data/Powder Composer Nodes Definition.pdf

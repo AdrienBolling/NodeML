@@ -5,37 +5,32 @@ Wraps ``sklearn.ensemble.RandomForestClassifier`` and exposes it as a NodeML
 input ports:
 
 * ``X`` - feature matrix ``(batch, features)`` as a numpy array
-* ``y`` - target vector ``(batch, 1)`` as a numpy array (training / evaluation only)
+* ``y`` - class labels ``(batch, 1)`` as a numpy array (training / evaluation only)
 
 and emits one output port:
 
-* ``pred`` - predicted class probabilities ``(batch, num_classes)`` as a numpy array
+* ``pred`` - float64 class probabilities ``(batch, classes)`` as a numpy array
 
-The ``predict`` method returns class probabilities via ``predict_proba`` when
-available, falling back to ``predict`` otherwise.
+``pred`` has one column ``proba_<class>`` for each class, in the order of
+the ``classes_`` attribute of the estimator.  A binary problem also gives
+two columns.  The classification metrics expect integer class labels
+``0 .. C-1``.
 """
 
 from typing import Any, Literal
 
-import numpy as np
 from pydantic import Field
 from ray import tune
 from sklearn.ensemble import RandomForestClassifier as SklearnRandomForestClassifier
 
-from nodeml.components.utils.sklearn_params import (
-    get_sklearn_fitted_params,
-    set_sklearn_fitted_params,
-)
+from nodeml.components.nodes.models._sklearn_base import SklearnModelNode
 from nodeml.core.common.data.data import (
     ArrayLikeEnum,
     DataCategoryEnum,
     DataStructureEnum,
-    TabularDataContext,
-    tabular_context_from_dict_dump,
 )
 from nodeml.core.common.enums import NodeExecutionMode
 from nodeml.core.nodes.models.model import (
-    Model,
     ModelConfig,
     ModelHyperParameters,
     ModelMetadata,
@@ -119,9 +114,6 @@ hyperparameter_space: dict[str, Any] = {
     "max_depth": tune.choice([None, 5, 10, 20, 30]),
 }
 
-# Type alias for the serialisable param dict used by get_params / set_params.
-type _RFCParams = dict[str, Any]
-
 
 class RandomForestClassifierConfig(
     ModelConfig[
@@ -154,7 +146,11 @@ class RandomForestClassifierConfig(
                 data_category=DataCategoryEnum.NUMERICAL,
                 data_shape="batch 1",
                 mode=[NodeExecutionMode.TRAINING, NodeExecutionMode.EVALUATION],
-                desc="Target class labels (batch, 1). Required during training and evaluation only.",
+                desc=(
+                    "Class labels (batch, 1). Use integers 0 .. C-1 for the "
+                    "classification metrics. Required during training and "
+                    "evaluation only."
+                ),
             ),
         },
         description="Input ports: 'X' (features, all modes) and 'y' (targets, training/evaluation).",
@@ -165,108 +161,41 @@ class RandomForestClassifierConfig(
                 arr_type=ArrayLikeEnum.NUMPY,
                 data_structure=DataStructureEnum.TABULAR,
                 data_category=DataCategoryEnum.NUMERICAL,
-                data_shape="batch num_classes",
-                desc="Predicted class probabilities (batch, num_classes).",
+                data_shape="batch classes",
+                desc=(
+                    "Float64 class probabilities (batch, classes). One column "
+                    "'proba_<class>' for each class, in the order of classes_."
+                ),
             ),
         },
         description="Output ports: 'pred' (predicted class probabilities).",
     )
 
 
-class RandomForestClassifierNode(
-    Model[
-        np.ndarray,
-        TabularDataContext,
-        np.ndarray,
-        TabularDataContext,
-        _RFCParams,
-    ]
-):
+class RandomForestClassifierNode(SklearnModelNode):
     """Random Forest Classifier model node.
 
-    The underlying sklearn estimator is built from
-    :class:`RandomForestClassifierConfig` on initialisation.  The target
-    context (column names, dtypes, categories) is captured during
-    :meth:`fit` and replayed on every :meth:`predict` call so that the
-    output :class:`~nodeml.core.common.data.data.TabularDataContext` is
-    always consistent with the training labels.
+    :class:`SklearnModelNode` builds the estimator from
+    :class:`RandomForestClassifierConfig` at each :meth:`fit`.  The ``pred``
+    port holds float64 class probabilities, one column ``proba_<class>``
+    for each class, in the order of ``classes_``.  A binary problem also
+    gets one column for each class.  Use integer class labels ``0 .. C-1``
+    for the classification metrics.
     """
 
     metadata = RandomForestClassifierMetadata()
     hyperparameter_space = hyperparameter_space
+    estimator_class = SklearnRandomForestClassifier
+    output_probabilities = True
+    multi_output = False
 
-    def __init__(self, *, config: RandomForestClassifierConfig) -> None:
-        """Construct the sklearn estimator from *config*."""
-        self._config = config
-        self._model = SklearnRandomForestClassifier(
-            n_estimators=config.hyperparameters.n_estimators,
-            max_depth=config.hyperparameters.max_depth,
-            criterion=config.running_config.criterion,
-            random_state=config.running_config.random_state,
-        )
-        # Populated during fit; used to rebuild the output context at
-        # prediction time without requiring access to the training data.
-        self._target_context_dump: dict[str, list[str]] = {}
-
-    # --- Model interface --------------------------------------------------
-
-    def fit(self, data: dict[str, tuple[np.ndarray, TabularDataContext]]) -> None:
-        """Fit the Random Forest on the provided *(X, y)* pair.
-
-        Parameters
-        ----------
-        data:
-            Must contain keys ``"X"`` (features) and ``"y"`` (targets).
-
-        """
-        X, _ = data["X"]
-        y, y_ctx = data["y"]
-        # sklearn classifiers expect a 1-D target array.
-        self._model.fit(X, y.ravel())
-        self._target_context_dump = y_ctx.dump_dict
-
-    def predict(
-        self, data: dict[str, tuple[np.ndarray, TabularDataContext]]
-    ) -> dict[str, tuple[np.ndarray, TabularDataContext]]:
-        """Predict using the fitted Random Forest.
-
-        Parameters
-        ----------
-        data:
-            Must contain key ``"X"`` (features).  ``"y"`` is ignored if
-            present (inference / evaluation phases).
-
-        Returns
-        -------
-        dict
-            ``{"pred": (probabilities, context)}`` where probabilities is a
-            2-D array ``(batch, num_classes)``.
-
-        """
-        X, _ = data["X"]
-        # Prefer predict_proba for class probabilities; fall back to predict.
-        if hasattr(self._model, "predict_proba"):
-            pred: np.ndarray = self._model.predict_proba(X)
-        else:
-            pred = self._model.predict(X)
-        # Ensure output is always 2-D so downstream nodes see a consistent shape.
-        if pred.ndim == 1:
-            pred = pred[:, np.newaxis]
-        pred_ctx = tabular_context_from_dict_dump(self._target_context_dump)
-        return {"pred": (pred, pred_ctx)}
-
-    def get_params(self) -> _RFCParams:
-        """Return the serialisable state of this node.
-
-        Includes both the sklearn estimator's internal parameters and the
-        captured target context needed to reconstruct predictions.
-        """
+    def _estimator_kwargs(self) -> dict[str, Any]:
+        """Return the estimator arguments from the node config."""
+        hp = self._config.hyperparameters
+        rc = self._config.running_config
         return {
-            "fitted_params": get_sklearn_fitted_params(self._model),
-            "target_context": self._target_context_dump,
+            "n_estimators": hp.n_estimators,
+            "max_depth": hp.max_depth,
+            "criterion": rc.criterion,
+            "random_state": rc.random_state,
         }
-
-    def set_params(self, params: _RFCParams) -> None:
-        """Restore node state from a previously serialised param dict."""
-        set_sklearn_fitted_params(self._model, params["fitted_params"])
-        self._target_context_dump = params["target_context"]

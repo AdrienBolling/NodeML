@@ -5,39 +5,34 @@ Wraps ``sklearn.ensemble.GradientBoostingClassifier`` and exposes it as a NodeML
 input ports:
 
 * ``X`` - feature matrix ``(batch, features)`` as a numpy array
-* ``y`` - label vector ``(batch, 1)`` as a numpy array (training / evaluation only)
+* ``y`` - class labels ``(batch, 1)`` as a numpy array (training / evaluation only)
 
 and emits one output port:
 
-* ``pred`` - predicted class probabilities ``(batch, num_classes)`` as a numpy array
+* ``pred`` - float64 class probabilities ``(batch, classes)`` as a numpy array
 
-The classifier outputs probabilities via ``predict_proba``, which always
-returns a 2-D array ``(batch, num_classes)``.
+``pred`` has one column ``proba_<class>`` for each class, in the order of
+the ``classes_`` attribute of the estimator.  A binary problem also gives
+two columns.  The classification metrics expect integer class labels
+``0 .. C-1``.
 """
 
 from typing import Any, Literal
 
-import numpy as np
 from pydantic import Field
 from ray import tune
 from sklearn.ensemble import (
     GradientBoostingClassifier as SklearnGradientBoostingClassifier,
 )
 
-from nodeml.components.utils.sklearn_params import (
-    get_sklearn_fitted_params,
-    set_sklearn_fitted_params,
-)
+from nodeml.components.nodes.models._sklearn_base import SklearnModelNode
 from nodeml.core.common.data.data import (
     ArrayLikeEnum,
     DataCategoryEnum,
     DataStructureEnum,
-    TabularDataContext,
-    tabular_context_from_dict_dump,
 )
 from nodeml.core.common.enums import NodeExecutionMode
 from nodeml.core.nodes.models.model import (
-    Model,
     ModelConfig,
     ModelHyperParameters,
     ModelMetadata,
@@ -131,9 +126,6 @@ hyperparameter_space: dict[str, Any] = {
     "learning_rate": tune.choice([0.01, 0.05, 0.1, 0.2]),
 }
 
-# Type alias for the serialisable param dict used by get_params / set_params.
-type _GBCParams = dict[str, Any]
-
 
 class GradientBoostingClassifierConfig(
     ModelConfig[
@@ -166,7 +158,11 @@ class GradientBoostingClassifierConfig(
                 data_category=DataCategoryEnum.NUMERICAL,
                 data_shape="batch 1",
                 mode=[NodeExecutionMode.TRAINING, NodeExecutionMode.EVALUATION],
-                desc="Class labels (batch, 1). Required during training and evaluation only.",
+                desc=(
+                    "Class labels (batch, 1). Use integers 0 .. C-1 for the "
+                    "classification metrics. Required during training and "
+                    "evaluation only."
+                ),
             ),
         },
         description="Input ports: 'X' (features, all modes) and 'y' (labels, training/evaluation).",
@@ -177,97 +173,42 @@ class GradientBoostingClassifierConfig(
                 arr_type=ArrayLikeEnum.NUMPY,
                 data_structure=DataStructureEnum.TABULAR,
                 data_category=DataCategoryEnum.NUMERICAL,
-                data_shape="batch num_classes",
-                desc="Predicted class probabilities (batch, num_classes).",
+                data_shape="batch classes",
+                desc=(
+                    "Float64 class probabilities (batch, classes). One column "
+                    "'proba_<class>' for each class, in the order of classes_."
+                ),
             ),
         },
         description="Output ports: 'pred' (predicted class probabilities).",
     )
 
 
-class GradientBoostingClassifierNode(
-    Model[
-        np.ndarray,
-        TabularDataContext,
-        np.ndarray,
-        TabularDataContext,
-        _GBCParams,
-    ]
-):
+class GradientBoostingClassifierNode(SklearnModelNode):
     """Gradient Boosting Classifier model node.
 
-    The underlying sklearn estimator is built from
-    :class:`GradientBoostingClassifierConfig` on initialisation.  The target
-    context (column names, dtypes, categories) is captured during
-    :meth:`fit` and replayed on every :meth:`predict` call so that the
-    output :class:`~nodeml.core.common.data.data.TabularDataContext` is
-    always consistent with the training labels.
+    :class:`SklearnModelNode` builds the estimator from
+    :class:`GradientBoostingClassifierConfig` at each :meth:`fit`.  The
+    ``pred`` port holds float64 class probabilities, one column
+    ``proba_<class>`` for each class, in the order of ``classes_``.  A binary
+    problem also gets one column for each class.  Use integer class labels
+    ``0 .. C-1`` for the classification metrics.
     """
 
     metadata = GradientBoostingClassifierMetadata()
     hyperparameter_space = hyperparameter_space
+    estimator_class = SklearnGradientBoostingClassifier
+    output_probabilities = True
+    multi_output = False
 
-    def __init__(self, *, config: GradientBoostingClassifierConfig) -> None:
-        """Construct the sklearn estimator from *config*."""
-        self._config = config
-        self._model = SklearnGradientBoostingClassifier(
-            n_estimators=config.hyperparameters.n_estimators,
-            max_depth=config.hyperparameters.max_depth,
-            learning_rate=config.hyperparameters.learning_rate,
-            loss=config.running_config.loss,
-            random_state=config.running_config.random_state,
-        )
-        # Populated during fit; used to rebuild the output context at
-        # prediction time without requiring access to the training data.
-        self._target_context_dump: dict[str, list[str]] = {}
-
-    # --- Model interface --------------------------------------------------
-
-    def fit(self, data: dict[str, tuple[np.ndarray, TabularDataContext]]) -> None:
-        """Fit the Gradient Boosting Classifier on the provided *(X, y)* pair.
-
-        Args:
-            data: Must contain keys ``"X"`` (features) and ``"y"`` (labels).
-
-        """
-        X, _ = data["X"]
-        y, y_ctx = data["y"]
-        # sklearn GBC expects a 1-D label array.
-        self._model.fit(X, y.ravel())
-        self._target_context_dump = y_ctx.dump_dict
-
-    def predict(
-        self, data: dict[str, tuple[np.ndarray, TabularDataContext]]
-    ) -> dict[str, tuple[np.ndarray, TabularDataContext]]:
-        """Predict class probabilities using the fitted Gradient Boosting Classifier.
-
-        Args:
-            data: Must contain key ``"X"`` (features).  ``"y"`` is ignored if
-                present (inference / evaluation phases).
-
-        Returns:
-            ``{"pred": (probabilities, context)}`` where probabilities is a
-            2-D array ``(batch, num_classes)``.
-
-        """
-        X, _ = data["X"]
-        pred: np.ndarray = self._model.predict_proba(X)
-        # predict_proba always returns 2-D (batch, num_classes).
-        pred_ctx = tabular_context_from_dict_dump(self._target_context_dump)
-        return {"pred": (pred, pred_ctx)}
-
-    def get_params(self) -> _GBCParams:
-        """Return the serialisable state of this node.
-
-        Includes both the sklearn estimator's internal parameters and the
-        captured target context needed to reconstruct predictions.
-        """
+    def _estimator_kwargs(self) -> dict[str, Any]:
+        """Return the estimator arguments from the node config."""
+        hp = self._config.hyperparameters
+        rc = self._config.running_config
         return {
-            "fitted_params": get_sklearn_fitted_params(self._model),
-            "target_context": self._target_context_dump,
+            "n_estimators": hp.n_estimators,
+            "max_depth": hp.max_depth,
+            "learning_rate": hp.learning_rate,
+            "loss": rc.loss,
+            "random_state": rc.random_state,
         }
-
-    def set_params(self, params: _GBCParams) -> None:
-        """Restore node state from a previously serialised param dict."""
-        set_sklearn_fitted_params(self._model, params["fitted_params"])
-        self._target_context_dump = params["target_context"]

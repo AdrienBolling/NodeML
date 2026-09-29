@@ -5,6 +5,7 @@ This class serves as a blueprint for implementing various pipeline execution str
 
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
@@ -67,7 +68,7 @@ class PipelineRunner(ABC):
         return self._config
 
     @property
-    def mode(self) -> str:
+    def mode(self) -> NodeExecutionMode:
         """Get the current execution mode of the runner. The mode is supposed to be set automatically according to the function used."""
         return self._mode
 
@@ -84,11 +85,11 @@ class PipelineRunner(ABC):
         """Set the parameters of all nodes in the pipeline."""
         self._pipeline.set_params(params=params)
 
-    def save_params_to_dir(self, dir_path: str) -> None:
+    def save_params_to_dir(self, dir_path: str | Path) -> None:
         """Save the parameters of all nodes in the pipeline to a directory."""
         self._pipeline.save_params_to_dir(dir_path=dir_path)
 
-    def load_params_from_dir(self, dir_path: str) -> None:
+    def load_params_from_dir(self, dir_path: str | Path) -> None:
         """Load the parameters of all nodes in the pipeline from a directory."""
         self._pipeline.load_params_from_dir(dir_path=dir_path)
 
@@ -110,8 +111,8 @@ class PipelineRunner(ABC):
 
         Args:
             input_data: Optional external data keyed by
-                ``{node_name: {port_name: Array}}``.  Source nodes may use
-                this instead of their built-in data loading.
+                ``{node_name: {port_name: (array, context)}}``.  Source
+                nodes with ``accepts_inputs=True`` use this data.
 
         """
         ...
@@ -129,7 +130,7 @@ class PipelineRunner(ABC):
                 :meth:`train`).
 
         Returns:
-            Mapping of metric names to their computed :class:`Data` values.
+            Mapping of metric names to ``(array, context)`` tuples.
 
         """
         ...
@@ -147,8 +148,7 @@ class PipelineRunner(ABC):
                 :meth:`train`).
 
         Returns:
-            Mapping of output port names to their :class:`Data` values
-            from the sink node.
+            Mapping of Sink port names to ``(array, context)`` tuples.
 
         """
         ...

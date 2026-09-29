@@ -9,29 +9,27 @@ two input ports:
 
 and emits one output port:
 
-* ``score`` - scalar metric value ``(1, 1)`` as a numpy array
+* ``score`` - metric value ``(1, 1)`` as a numpy array, or one column per
+              output ``(1, targets)`` with ``num_outputs > 1``
 
 MAE is more robust to outliers than MSE and reports error in the same
 units as the target variable.
 """
 
-import numpy as np
-import torch
 from pydantic import Field
-from torchmetrics import MeanAbsoluteError
+from torchmetrics import MeanAbsoluteError, Metric
 
-from nodeml.core.common.data.data import (
-    ArrayLikeEnum,
-    DataCategoryEnum,
-    DataStructureEnum,
-    NumericalData,
-    TabularDataContext,
+from nodeml.components.nodes.metrics.base import (
+    TorchMetricRunningConfig,
+    score_out_ports,
+)
+from nodeml.components.nodes.metrics.regression.base import (
+    RegressionMetricNode,
+    regression_in_ports,
 )
 from nodeml.core.nodes.metrics.metric_node import (
-    MetricNode,
     MetricNodeConfig,
     MetricNodeMetadata,
-    MetricNodeRunningConfig,
 )
 from nodeml.core.nodes.node import Port
 
@@ -47,16 +45,17 @@ class MAEMetadata(MetricNodeMetadata):
     )
 
 
-class MAERunningConfig(MetricNodeRunningConfig):
+class MAERunningConfig(TorchMetricRunningConfig):
     """Run-time options for the MAE metric node."""
 
     num_outputs: int = Field(
         default=1,
         ge=1,
         description=(
-            "Number of output targets. "
-            "Set to >1 for multi-output regression so that the metric "
-            "averages across outputs correctly."
+            "Number of outputs (target columns). "
+            "With 1, the score is the mean over all outputs. "
+            "With more than 1, the score has one column per output, "
+            "and the inputs must have exactly this number of columns."
         ),
     )
 
@@ -69,85 +68,36 @@ class MAEConfig(MetricNodeConfig[MAERunningConfig]):
         description="Run-time options (num_outputs).",
     )
     in_ports: dict[str, Port] = Field(
-        default={
-            "pred": Port(
-                arr_type=ArrayLikeEnum.NUMPY,
-                data_structure=DataStructureEnum.TABULAR,
-                data_category=DataCategoryEnum.NUMERICAL,
-                data_shape="batch targets",
-                desc="Predicted values (batch, targets).",
-            ),
-            "target": Port(
-                arr_type=ArrayLikeEnum.NUMPY,
-                data_structure=DataStructureEnum.TABULAR,
-                data_category=DataCategoryEnum.NUMERICAL,
-                data_shape="batch targets",
-                desc="Ground-truth target values (batch, targets).",
-            ),
-        },
+        default=regression_in_ports(),
         description="Input ports: 'pred' (predictions) and 'target' (ground truth).",
     )
     out_ports: dict[str, Port] = Field(
-        default={
-            "score": Port(
-                arr_type=ArrayLikeEnum.NUMPY,
-                data_structure=DataStructureEnum.TABULAR,
-                data_category=DataCategoryEnum.NUMERICAL,
-                data_shape="1 1",
-                desc="Scalar metric value.",
-            ),
-        },
-        description="Output ports: 'score' (scalar metric value).",
+        default=score_out_ports(
+            "Metric value (1, 1), or one value per output (1, targets) "
+            "with num_outputs > 1.",
+            per_output=True,
+        ),
+        description="Output ports: 'score' (metric value).",
     )
 
 
-class MAE(
-    MetricNode[
-        np.ndarray,
-        TabularDataContext,
-        np.ndarray,
-        TabularDataContext,
-    ]
-):
+class MAE(RegressionMetricNode):
     """Mean Absolute Error metric node.
 
     Converts numpy inputs to torch tensors, delegates to
-    ``torchmetrics.MeanAbsoluteError``, and returns the scalar result as a
-    ``(1, 1)`` numpy array with a :class:`TabularDataContext`.
+    ``torchmetrics.MeanAbsoluteError``, and returns the result as one row
+    of float64 values: one column ``mae``, or one column per output
+    ``mae_0``, ``mae_1``, ... with ``num_outputs > 1``.
     """
 
     metadata = MAEMetadata()
+    score_name = "mae"
 
-    def __init__(self, *, config: MAEConfig) -> None:
-        """Initialise the node with its configuration."""
-        self._config = config
-        rc = config.running_config
-        self._metric = MeanAbsoluteError(
-            num_outputs=rc.num_outputs,
-        )
+    def _build_metric(self) -> Metric:
+        """Build the torchmetrics metric.
 
-    # --- MetricNode interface ------------------------------------------------
+        Returns:
+            A ``MeanAbsoluteError`` metric.
 
-    def update(self, data: dict[str, tuple[np.ndarray, TabularDataContext]]) -> None:
-        """Feed predictions and targets into the torchmetrics accumulator."""
-        pred, _ = data["pred"]
-        target, _ = data["target"]
-        self._metric.update(
-            torch.from_numpy(pred).float(),
-            torch.from_numpy(target).float(),
-        )
-
-    def compute(self) -> dict[str, tuple[np.ndarray, TabularDataContext]]:
-        """Compute MAE and return a ``(1, 1)`` result array."""
-        value = self._metric.compute().item()
-        self._metric.reset()
-        return {
-            "score": (
-                np.array([[value]], dtype=np.float64),
-                TabularDataContext(
-                    columns=["mae"],
-                    dtypes=[np.dtype("float64")],
-                    categories=[NumericalData],
-                ),
-            ),
-        }
+        """
+        return MeanAbsoluteError(num_outputs=self._config.running_config.num_outputs)

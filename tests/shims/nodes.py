@@ -351,6 +351,9 @@ class SumCountMetric(
         pred, _ = data["pred"]
         self._count += int(pred.shape[0])
 
+    def reset(self) -> None:
+        self._count = 0
+
     def compute(self) -> dict[str, tuple[np.ndarray, TabularDataContext]]:
         return {
             "score": (

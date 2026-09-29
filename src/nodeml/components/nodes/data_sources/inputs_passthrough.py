@@ -100,34 +100,33 @@ class InputsPassthrough(
     producing data on its own.
 
     Example:
-    -------
-    ::
+        ::
 
-        cfg = InputsPassthroughConfig(
-            out_ports={
-                "features": Port(
-                    arr_type=ArrayLikeEnum.PANDAS,
-                    data_structure=DataStructureEnum.TABULAR,
-                    data_category=DataCategoryEnum.MIXED,
-                    data_shape="batch feature",
-                    desc="Feature matrix forwarded from the caller.",
-                ),
-                "targets": Port(
-                    arr_type=ArrayLikeEnum.PANDAS,
-                    data_structure=DataStructureEnum.TABULAR,
-                    data_category=DataCategoryEnum.NUMERICAL,
-                    data_shape="batch 1",
-                    desc="Regression targets, only required in training.",
-                    mode=[str(NodeExecutionMode.TRAINING)],
-                ),
-            },
-        )
-        node = InputsPassthrough(config=cfg)
-        # Then at pipeline run time:
-        runner.train(input_data={"source": {
-            "features": (X_train, X_ctx),
-            "targets":  (y_train, y_ctx),
-        }})
+            cfg = InputsPassthroughConfig(
+                out_ports={
+                    "features": Port(
+                        arr_type=ArrayLikeEnum.PANDAS,
+                        data_structure=DataStructureEnum.TABULAR,
+                        data_category=DataCategoryEnum.MIXED,
+                        data_shape="batch feature",
+                        desc="Feature matrix forwarded from the caller.",
+                    ),
+                    "targets": Port(
+                        arr_type=ArrayLikeEnum.PANDAS,
+                        data_structure=DataStructureEnum.TABULAR,
+                        data_category=DataCategoryEnum.NUMERICAL,
+                        data_shape="batch 1",
+                        desc="Regression targets, only required in training.",
+                        mode=[str(NodeExecutionMode.TRAINING)],
+                    ),
+                },
+            )
+            node = InputsPassthrough(config=cfg)
+            # Then at pipeline run time:
+            runner.train(input_data={"source": {
+                "features": (X_train, X_ctx),
+                "targets":  (y_train, y_ctx),
+            }})
 
     """
 
@@ -135,7 +134,12 @@ class InputsPassthrough(
     accepts_inputs: bool = True
 
     def __init__(self, *, config: InputsPassthroughConfig) -> None:
-        """Initialise the node with its configuration."""
+        """Initialise the node with its configuration.
+
+        Args:
+            config: The configuration of the node.
+
+        """
         self._config = config
 
     # --- DataSourceNode interface ----------------------------------------
@@ -150,24 +154,18 @@ class InputsPassthrough(
     ) -> dict[str, tuple[ArrayLike, DataContext]]:
         """Validate and return the externally supplied inputs unchanged.
 
-        Parameters
-        ----------
-        data:
-            Mapping of port name to ``(array, context)`` tuples provided
-            by the runner from its external ``input_data`` payload.
+        Args:
+            data: Mapping of port name to ``(array, context)`` tuples that
+                the runner takes from its external ``input_data`` payload.
 
-        Returns
-        -------
-        dict
-            The same mapping, unchanged. A shallow copy is made so the
-            runner's internal structures are not aliased downstream.
+        Returns:
+            The same mapping, unchanged.  It is a shallow copy, so the
+            internal structures of the runner are not shared downstream.
 
-        Raises
-        ------
-        ValueError
-            If *data* contains keys that do not match any declared
-            ``out_port``, or if a required port (active in the current
-            ``execution_mode`` and not ``optional``) has no entry.
+        Raises:
+            ValueError: If *data* has keys that do not match a declared
+                ``out_port``, or if a required port (active in the current
+                ``execution_mode`` and not ``optional``) has no entry.
 
         """
         payload: dict[str, tuple[ArrayLike, DataContext]] = dict(data or {})

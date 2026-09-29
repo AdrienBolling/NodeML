@@ -1,6 +1,6 @@
 """Enumerations shared across the NodeML framework."""
 
-from enum import Enum, StrEnum, auto
+from enum import StrEnum
 
 
 class NodeExecutionMode(StrEnum):

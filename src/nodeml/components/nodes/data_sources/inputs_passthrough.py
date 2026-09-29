@@ -99,7 +99,7 @@ class InputsPassthrough(
     this source wants the external inputs passed through rather than
     producing data on its own.
 
-    Example
+    Example:
     -------
     ::
 
@@ -128,12 +128,14 @@ class InputsPassthrough(
             "features": (X_train, X_ctx),
             "targets":  (y_train, y_ctx),
         }})
+
     """
 
     metadata = InputsPassthroughMetadata()
     accepts_inputs: bool = True
 
     def __init__(self, *, config: InputsPassthroughConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
 
     # --- DataSourceNode interface ----------------------------------------
@@ -166,6 +168,7 @@ class InputsPassthrough(
             If *data* contains keys that do not match any declared
             ``out_port``, or if a required port (active in the current
             ``execution_mode`` and not ``optional``) has no entry.
+
         """
         payload: dict[str, tuple[ArrayLike, DataContext]] = dict(data or {})
         self._validate_inputs(payload)

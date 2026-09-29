@@ -1,11 +1,11 @@
 """IQR (Inter-Quartile Range) outlier filter transform node for the NodeML Framework.
 
 Detects outliers as values outside the Tukey fences
-``[Q1 − k·IQR, Q3 + k·IQR]`` for a configurable multiplier *k*.  Two
+``[Q1 - k·IQR, Q3 + k·IQR]`` for a configurable multiplier *k*.  Two
 strategies are available:
 
-* ``"remove"`` – drop the entire row (default).
-* ``"cap"``    – clip the value to the fence boundary.
+* ``"remove"`` - drop the entire row (default).
+* ``"cap"``    - clip the value to the fence boundary.
 
 Per-column **Q1**, **Q3**, and **IQR** are learned during :meth:`fit` and
 reused at :meth:`transform` time.
@@ -17,8 +17,8 @@ The standard Tukey fence uses ``k=1.5`` (mild outliers) or ``k=3.0``
 from typing import Any, Literal, cast
 
 import pandas as pd
-from ray import tune
 from pydantic import Field
+from ray import tune
 
 from nodeml.components.utils.dataframe import filter_columns
 from nodeml.core.common.data.data import (
@@ -46,7 +46,7 @@ class IQROutlierFilterMetadata(TransformMetadata):
     node_name: str = "IQROutlierFilter"
     description: str = (
         "Detect and handle outliers using the IQR (Tukey fence) method. "
-        "A value is an outlier if it falls outside [Q1 − k·IQR, Q3 + k·IQR]."
+        "A value is an outlier if it falls outside [Q1 - k·IQR, Q3 + k·IQR]."
     )
 
 
@@ -210,6 +210,7 @@ class IQROutlierFilter(
     hyperparameter_space = hyperparameter_space
 
     def __init__(self, *, config: IQROutlierFilterConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         self._params: _IQRParams = {}
         # Must be set so node_transform blocks until fit has been called.
@@ -257,7 +258,9 @@ class IQROutlierFilter(
             if port in data:
                 port_df, port_ctx = data[port]
                 if keep is not None:
-                    port_df = cast("pd.DataFrame", port_df.loc[keep]).reset_index(drop=True)
+                    port_df = cast("pd.DataFrame", port_df.loc[keep]).reset_index(
+                        drop=True
+                    )
                 outputs[port] = (port_df, port_ctx)
         return outputs
 
@@ -313,7 +316,7 @@ class IQROutlierFilter(
             filtered = cast("pd.DataFrame", df.loc[~mask])
             return filtered.reset_index(drop=True)
 
-        # strategy == "cap"
+        # The remaining strategy is "cap".
         k = self._config.hyperparameters.iqr_multiplier
         result = df.copy()
         for col in outlier_mask.columns:

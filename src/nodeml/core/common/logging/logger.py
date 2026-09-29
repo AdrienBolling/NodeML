@@ -113,19 +113,13 @@ class Logger:
         The parent logger and its underlying :class:`logging.Logger` are
         shared -- only the context dict is copied and extended.
         """
-        merged = {**self._context, **kwargs}
-        child = Logger.__new__(Logger)
-        child._logger = self._logger
-        child._context = merged
-        return child
+        # logging.getLogger returns the same underlying logger for a name.
+        return Logger(self._logger.name, **{**self._context, **kwargs})
 
     def unbind(self, *keys: str) -> Logger:
         """Return a new logger with the given keys removed from context."""
         reduced = {k: v for k, v in self._context.items() if k not in keys}
-        child = Logger.__new__(Logger)
-        child._logger = self._logger
-        child._context = reduced
-        return child
+        return Logger(self._logger.name, **reduced)
 
     # ------------------------------------------------------------------
     # Standard logging API
@@ -295,7 +289,7 @@ class Logger:
         extra.update(kwargs)
         self.debug(f"Node called: {node_name}", **extra)
 
-    def log_trial(  # noqa: PLR0913
+    def log_trial(
         self,
         trial_id: str | int,
         status: Literal["start", "end", "error"],
@@ -375,7 +369,7 @@ class Logger:
         """
         scoped = self.bind(**context) if context else self
         t0 = time.perf_counter()
-        scoped._log(level, f"{event} start", {"phase_status": "start"})
+        scoped._log(level, f"{event} start", {"phase_status": "start"})  # noqa: SLF001 - same class
         try:
             yield scoped
         except BaseException as exc:
@@ -388,7 +382,7 @@ class Logger:
             )
             raise
         duration_ms = (time.perf_counter() - t0) * 1000.0
-        scoped._log(
+        scoped._log(  # noqa: SLF001 - same class
             level,
             f"{event} end",
             {"phase_status": "end", "duration_ms": duration_ms},
@@ -423,6 +417,7 @@ class Logger:
     # ------------------------------------------------------------------
 
     def __repr__(self) -> str:
+        """Return the logger name and its bound context."""
         return f"Logger(name={self._logger.name!r}, context={self._context!r})"
 
 

@@ -4,13 +4,13 @@ Wraps ``torchmetrics.AUROC`` and exposes it as a NodeML
 :class:`~nodeml.core.nodes.metrics.metric_node.MetricNode`.  The node expects
 two input ports:
 
-* ``pred``   – predicted class probabilities or logits ``(batch, num_classes)``
+* ``pred``   - predicted class probabilities or logits ``(batch, num_classes)``
                as a numpy array (for multiclass), or ``(batch, 1)`` for binary
-* ``target`` – ground-truth class labels ``(batch, 1)`` as a numpy integer array
+* ``target`` - ground-truth class labels ``(batch, 1)`` as a numpy integer array
 
 and emits one output port:
 
-* ``score`` – scalar metric value ``(1, 1)`` as a numpy array
+* ``score`` - scalar metric value ``(1, 1)`` as a numpy array
 
 AUROC measures the model's ability to discriminate between classes across
 all possible decision thresholds.  A score of 0.5 corresponds to a random
@@ -151,6 +151,7 @@ class AUROCNode(
     metadata = AUROCMetadata()
 
     def __init__(self, *, config: AUROCConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         rc = config.running_config
         metric_kwargs: dict = {"task": rc.task}
@@ -163,9 +164,7 @@ class AUROCNode(
 
     # --- MetricNode interface ------------------------------------------------
 
-    def update(
-        self, data: dict[str, tuple[np.ndarray, TabularDataContext]]
-    ) -> None:
+    def update(self, data: dict[str, tuple[np.ndarray, TabularDataContext]]) -> None:
         """Feed predictions and targets into the torchmetrics accumulator."""
         pred, _ = data["pred"]
         target, _ = data["target"]

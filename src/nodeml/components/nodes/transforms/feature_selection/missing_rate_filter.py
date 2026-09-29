@@ -4,8 +4,8 @@ Removes features whose missing-value rate exceeds a configurable threshold.
 The missing rate per column is computed during :meth:`fit` and the resulting
 column mask is reused at :meth:`transform` time.
 
-* Input  – a ``(batch, feature)`` DataFrame of **mixed** data category.
-* Output – the same DataFrame with high-missing-rate columns removed.
+* Input  - a ``(batch, feature)`` DataFrame of **mixed** data category.
+* Output - the same DataFrame with high-missing-rate columns removed.
 
 Implemented with numpy for performance (``np.isnan`` on the underlying
 array after coercing to float where possible, with a fallback to pandas
@@ -16,9 +16,9 @@ from copy import deepcopy
 from typing import Any, cast
 
 import numpy as np
-from ray import tune
 import pandas as pd
 from pydantic import Field
+from ray import tune
 
 from nodeml.components.utils.dataframe import filter_columns
 from nodeml.core.common.data.data import (
@@ -146,38 +146,37 @@ class MissingRateFilter(
     :meth:`transform`, the stored column list is used to subset the
     DataFrame and its context.
 
-    Example
+    Example:
     -------
     >>> cfg = MissingRateFilterConfig(
     ...     hyperparameters=MissingRateFilterHyperParameters(threshold=0.3),
     ... )
     >>> node = MissingRateFilter(config=cfg)
+
     """
 
     metadata = MissingRateFilterMetadata()
     hyperparameter_space = hyperparameter_space
 
     def __init__(self, *, config: MissingRateFilterConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         self._params: _MissingRateParams = {"columns_to_keep": []}
         self._fitted = False
 
     # --- TransformNode interface ------------------------------------------
 
-    def fit(
-        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
-    ) -> None:
+    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
         """Identify columns whose missing rate is within the threshold.
 
         Parameters
         ----------
         data:
             Must contain key ``"input"``.
+
         """
         df, _ = data["input"]
-        candidates = filter_columns(
-            df, self._config.running_config.filtering_columns
-        )
+        candidates = filter_columns(df, self._config.running_config.filtering_columns)
         threshold = self._config.hyperparameters.threshold
         n_rows = len(df)
 
@@ -191,9 +190,7 @@ class MissingRateFilter(
         ]
 
         # Columns not in the candidate set are always kept.
-        non_candidate_cols = [
-            c for c in df.columns if c not in candidates.columns
-        ]
+        non_candidate_cols = [c for c in df.columns if c not in candidates.columns]
         self._params = {
             "columns_to_keep": non_candidate_cols + surviving_cols,
         }
@@ -207,6 +204,7 @@ class MissingRateFilter(
         ----------
         data:
             Must contain key ``"input"``.
+
         """
         df, ctx = data["input"]
         keep = self._params["columns_to_keep"]

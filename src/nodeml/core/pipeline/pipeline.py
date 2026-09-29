@@ -88,9 +88,7 @@ class Edge(BaseModel):
 
     source: str
     target: str
-    ports_map: list[
-        tuple[str, str]
-    ]
+    ports_map: list[tuple[str, str]]
 
 
 class PipelineConfig(BaseModel):
@@ -617,7 +615,7 @@ class Pipeline:
         """
         file_name = f"{dir_path}/{self.file_basename}_params.pkl"
         with Path(file_name).open("rb") as f:
-            params = pickle.load(f)
+            params = pickle.load(f)  # noqa: S301 - only load files you trust
         self.set_params(params)
 
     def save_config_to_dir(self, dir_path: str) -> None:
@@ -1075,7 +1073,7 @@ class Pipeline:
             # Now that everything is validated, instantiate the nodes
             self._instantiate_node_objects()
         except Exception as exc:
-            log.exception("Compilation failed", exc)
+            log.exception("Compilation failed", exc)  # noqa: PLE1205, TRY401 - nodeml Logger API
             raise
 
         # Finish compilation
@@ -1095,7 +1093,7 @@ class Pipeline:
         title: str | None = None,
         backend: str = "plotly",
         figsize: tuple[int, int] | None = None,
-    ):
+    ) -> None:
         """Render the pipeline graph and display it interactively.
 
         Args:

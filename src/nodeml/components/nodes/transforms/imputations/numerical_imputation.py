@@ -2,9 +2,9 @@
 
 Fills missing values in numerical columns using one of three strategies:
 
-* ``"mean"``     – replace NaNs with the per-column mean (learned at fit).
-* ``"median"``   – replace NaNs with the per-column median (learned at fit).
-* ``"constant"`` – replace NaNs with a user-supplied constant value.
+* ``"mean"``     - replace NaNs with the per-column mean (learned at fit).
+* ``"median"``   - replace NaNs with the per-column median (learned at fit).
+* ``"constant"`` - replace NaNs with a user-supplied constant value.
 
 Per-column fill values are persisted via :meth:`get_params` /
 :meth:`set_params` for checkpointing.
@@ -118,27 +118,27 @@ class NumericalImputation(
 ):
     """Fill missing values in numerical columns.
 
-    Example
+    Example:
     -------
     >>> cfg = NumericalImputationConfig(
     ...     hyperparameters=NumericalImputationHyperParameters(strategy="median"),
     ... )
     >>> node = NumericalImputation(config=cfg)
     >>> out = node.node_fit_transform({"input": (df, ctx)})
+
     """
 
     metadata = NumericalImputationMetadata()
 
     def __init__(self, *, config: NumericalImputationConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         self._params: _NumericalImputationParams = {}
         self._fitted = False
 
     # --- TransformNode interface ------------------------------------------
 
-    def fit(
-        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
-    ) -> None:
+    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
         """Learn per-column fill values from the training data."""
         df, _ = data["input"]
         hp = self._config.hyperparameters
@@ -149,7 +149,7 @@ class NumericalImputation(
             case "median":
                 self._params = {col: float(df[col].median()) for col in df.columns}
             case "constant":
-                self._params = {col: hp.value for col in df.columns}
+                self._params = dict.fromkeys(df.columns, hp.value)
 
     def transform(
         self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]

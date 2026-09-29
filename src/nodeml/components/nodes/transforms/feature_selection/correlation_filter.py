@@ -29,8 +29,8 @@ still applies within the preferred group (the earlier one survives).
 The final output DataFrame preserves the **original** column order of the
 input — reordering is only used internally for drop selection.
 
-* Input  – a ``(batch, feature)`` **numerical** DataFrame.
-* Output – the same DataFrame with redundant features removed.
+* Input  - a ``(batch, feature)`` **numerical** DataFrame.
+* Output - the same DataFrame with redundant features removed.
 
 Implemented with numpy (``np.corrcoef``) for Pearson, or delegates to
 ``scipy.stats.spearmanr`` / ``scipy.stats.kendalltau`` for rank-based
@@ -41,9 +41,10 @@ from copy import deepcopy
 from typing import Any, Literal, cast
 
 import numpy as np
-from ray import tune
 import pandas as pd
 from pydantic import Field
+from ray import tune
+from scipy.stats import kendalltau, spearmanr
 
 from nodeml.components.utils.dataframe import filter_columns
 from nodeml.core.common.data.data import (
@@ -63,6 +64,9 @@ from nodeml.core.nodes.transform.transform import (
 
 # Serialisable params: list of column names that survived the filter.
 type _CorrelationFilterParams = dict[str, list[str]]
+
+# A correlation needs at least two paired observations.
+_MIN_ROWS_FOR_CORRELATION = 2
 
 
 class CorrelationFilterMetadata(TransformMetadata):
@@ -205,7 +209,7 @@ class CorrelationFilter(
     input order), so they are kept over non-preferred correlates. The
     output DataFrame still follows the original input column order.
 
-    Example
+    Example:
     -------
     >>> cfg = CorrelationFilterConfig(
     ...     hyperparameters=CorrelationFilterHyperParameters(
@@ -216,32 +220,31 @@ class CorrelationFilter(
     ...     ),
     ... )
     >>> node = CorrelationFilter(config=cfg)
+
     """
 
     metadata = CorrelationFilterMetadata()
     hyperparameter_space = hyperparameter_space
 
     def __init__(self, *, config: CorrelationFilterConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         self._params: _CorrelationFilterParams = {"columns_to_keep": []}
         self._fitted = False
 
     # --- TransformNode interface ------------------------------------------
 
-    def fit(
-        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
-    ) -> None:
+    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
         """Compute the correlation matrix and identify redundant columns.
 
         Parameters
         ----------
         data:
             Must contain key ``"input"``.
+
         """
         df, _ = data["input"]
-        candidates = filter_columns(
-            df, self._config.running_config.filtering_columns
-        )
+        candidates = filter_columns(df, self._config.running_config.filtering_columns)
         threshold = self._config.hyperparameters.threshold
         method = self._config.hyperparameters.method
 
@@ -262,14 +265,10 @@ class CorrelationFilter(
 
         # Output column order follows the ORIGINAL input order, not the
         # preference-reordered one used for drop selection.
-        surviving_cols = [
-            c for c in original_candidate_cols if c not in cols_to_drop
-        ]
+        surviving_cols = [c for c in original_candidate_cols if c not in cols_to_drop]
 
         # Columns not in the candidate set are always kept.
-        non_candidate_cols = [
-            c for c in df.columns if c not in candidates.columns
-        ]
+        non_candidate_cols = [c for c in df.columns if c not in candidates.columns]
         self._params = {
             "columns_to_keep": non_candidate_cols + surviving_cols,
         }
@@ -283,6 +282,7 @@ class CorrelationFilter(
         ----------
         data:
             Must contain key ``"input"``.
+
         """
         df, ctx = data["input"]
         keep = self._params["columns_to_keep"]
@@ -321,9 +321,7 @@ class CorrelationFilter(
         return head + tail
 
     @staticmethod
-    def _compute_correlation(
-        df: pd.DataFrame, method: str
-    ) -> np.ndarray:
+    def _compute_correlation(df: pd.DataFrame, method: str) -> np.ndarray:
         """Return an ``(n_features, n_features)`` absolute correlation matrix."""
         arr = df.to_numpy(dtype=np.float64, na_value=np.nan)
 
@@ -331,27 +329,24 @@ class CorrelationFilter(
             # Drop rows with any NaN for corrcoef (it does not handle NaN).
             mask = ~np.isnan(arr).any(axis=1)
             clean = arr[mask]
-            if clean.shape[0] < 2:
+            if clean.shape[0] < _MIN_ROWS_FOR_CORRELATION:
                 return np.zeros((arr.shape[1], arr.shape[1]))
             return np.abs(np.corrcoef(clean, rowvar=False))
 
         if method == "spearman":
-            from scipy.stats import spearmanr
-
             corr, _ = spearmanr(arr, nan_policy="omit")
             # spearmanr returns a scalar when n_features == 1.
             corr = np.atleast_2d(corr)
             return np.abs(corr)
 
-        # method == "kendall"
-        from scipy.stats import kendalltau
+        # The remaining method is "kendall".
 
         n = arr.shape[1]
         corr = np.ones((n, n))
         for i in range(n):
             for j in range(i + 1, n):
                 mask = ~(np.isnan(arr[:, i]) | np.isnan(arr[:, j]))
-                if mask.sum() < 2:
+                if mask.sum() < _MIN_ROWS_FOR_CORRELATION:
                     corr[i, j] = corr[j, i] = 0.0
                 else:
                     tau, _ = kendalltau(arr[mask, i], arr[mask, j])

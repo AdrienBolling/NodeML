@@ -85,7 +85,8 @@ class PipelineRunnerWrapper[D_O, M, C](PipelineRunner, ABC):
 
     def train(
         self,
-        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]] | None = None,
+        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]]
+        | None = None,
     ) -> None:
         """Train the underlying pipeline runner.
 
@@ -98,7 +99,8 @@ class PipelineRunnerWrapper[D_O, M, C](PipelineRunner, ABC):
 
     def infer(
         self,
-        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]] | None = None,
+        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]]
+        | None = None,
     ) -> Mapping[str, tuple[ArrayLike, DataContext]]:
         """Infer with the underlying pipeline runner.
 
@@ -113,7 +115,8 @@ class PipelineRunnerWrapper[D_O, M, C](PipelineRunner, ABC):
 
     def evaluate(
         self,
-        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]] | None = None,
+        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]]
+        | None = None,
     ) -> Mapping[str, tuple[ArrayLike, DataContext]]:
         """Evaluate with the underlying pipeline runner.
 

@@ -10,8 +10,6 @@ The fitted category mapping is persisted via :meth:`get_params` /
 :meth:`set_params` for checkpointing.
 """
 
-from typing import Any
-
 import numpy as np
 import pandas as pd
 from pydantic import Field
@@ -40,9 +38,7 @@ class LabelEncodingMetadata(TransformMetadata):
     """Metadata for the LabelEncoding node."""
 
     node_name: str = "LabelEncoding"
-    description: str = (
-        "Encode categorical columns as ordinal integers (0, 1, 2, …)."
-    )
+    description: str = "Encode categorical columns as ordinal integers (0, 1, 2, …)."
     trainable: bool = True
 
 
@@ -115,20 +111,20 @@ class LabelEncoding(
         >>> node = LabelEncoding(config=LabelEncodingConfig())
         >>> out = node.node_fit_transform({"input": (df_cat, ctx_cat)})
         >>> encoded_df, encoded_ctx = out["output"]
+
     """
 
     metadata = LabelEncodingMetadata()
 
     def __init__(self, *, config: LabelEncodingConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         self._params: _LabelEncodingParams = {}
         self._fitted = False
 
     # --- TransformNode interface ------------------------------------------
 
-    def fit(
-        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
-    ) -> None:
+    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
         """Learn sorted unique categories for every column."""
         df, _ = data["input"]
         self._params = {
@@ -147,15 +143,9 @@ class LabelEncoding(
 
         for col in df.columns:
             categories = self._params.get(col, [])
-            mapping: dict[str, int] = {
-                cat: idx for idx, cat in enumerate(categories)
-            }
+            mapping: dict[str, int] = {cat: idx for idx, cat in enumerate(categories)}
             encoded_columns[col] = (
-                df[col]
-                .astype(str)
-                .map(mapping)
-                .fillna(-1)
-                .astype(np.int64)
+                df[col].astype(str).map(mapping).fillna(-1).astype(np.int64)
             )
             column_names.append(col)
 

@@ -7,17 +7,17 @@ numpy and the resulting column mask is reused at :meth:`transform` time.
 A threshold of ``0.0`` (the default) removes only constant columns.  Higher
 values can be used to filter out near-constant or low-information features.
 
-* Input  – a ``(batch, feature)`` **numerical** DataFrame.
-* Output – the same DataFrame with low-variance columns removed.
+* Input  - a ``(batch, feature)`` **numerical** DataFrame.
+* Output - the same DataFrame with low-variance columns removed.
 """
 
 from copy import deepcopy
 from typing import Any, cast
 
 import numpy as np
-from ray import tune
 import pandas as pd
 from pydantic import Field
+from ray import tune
 
 from nodeml.components.utils.dataframe import filter_columns
 from nodeml.core.common.data.data import (
@@ -143,42 +143,43 @@ class VarianceFilter(
     columns that pass.  During :meth:`transform`, the stored list is used
     to subset the DataFrame and its context.
 
-    Example
+    Example:
     -------
     >>> cfg = VarianceFilterConfig(
     ...     hyperparameters=VarianceFilterHyperParameters(threshold=0.01),
     ... )
     >>> node = VarianceFilter(config=cfg)
+
     """
 
     metadata = VarianceFilterMetadata()
     hyperparameter_space = hyperparameter_space
 
     def __init__(self, *, config: VarianceFilterConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         self._params: _VarianceFilterParams = {"columns_to_keep": []}
         self._fitted = False
 
     # --- TransformNode interface ------------------------------------------
 
-    def fit(
-        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
-    ) -> None:
+    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
         """Identify columns whose variance meets the threshold.
 
         Parameters
         ----------
         data:
             Must contain key ``"input"``.
+
         """
         df, _ = data["input"]
-        candidates = filter_columns(
-            df, self._config.running_config.filtering_columns
-        )
+        candidates = filter_columns(df, self._config.running_config.filtering_columns)
         threshold = self._config.hyperparameters.threshold
 
         # Compute variance using numpy, ignoring NaN values.
-        variances = np.nanvar(candidates.to_numpy(dtype=np.float64, na_value=np.nan), axis=0)
+        variances = np.nanvar(
+            candidates.to_numpy(dtype=np.float64, na_value=np.nan), axis=0
+        )
 
         surviving_cols = [
             col
@@ -187,9 +188,7 @@ class VarianceFilter(
         ]
 
         # Columns not in the candidate set are always kept.
-        non_candidate_cols = [
-            c for c in df.columns if c not in candidates.columns
-        ]
+        non_candidate_cols = [c for c in df.columns if c not in candidates.columns]
         self._params = {
             "columns_to_keep": non_candidate_cols + surviving_cols,
         }
@@ -203,6 +202,7 @@ class VarianceFilter(
         ----------
         data:
             Must contain key ``"input"``.
+
         """
         df, ctx = data["input"]
         keep = self._params["columns_to_keep"]

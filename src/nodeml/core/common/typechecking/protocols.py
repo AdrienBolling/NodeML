@@ -12,14 +12,18 @@ class HasHyperparametersConfig(Protocol):
 
     hyperparameters: BaseModel
 
-    def model_copy(self, update: dict[str, Any]) -> BaseModel: ...
+    def model_copy(self, update: dict[str, Any]) -> BaseModel:
+        """Return a copy of the config with *update* applied."""
+        ...
 
 
 class HasHyperparametersNode(Protocol):
     """Protocol for nodes that have hyperparameters in their configuration."""
 
     @property
-    def config(self) -> HasHyperparametersConfig: ...
+    def config(self) -> HasHyperparametersConfig:
+        """Return the node config that holds the hyperparameters."""
+        ...
 
 
 # --------------
@@ -27,8 +31,13 @@ class HasHyperparametersNode(Protocol):
 class HasParamsNode(Protocol):
     """Protocol for objects that have parameters."""
 
-    def get_params(self) -> dict[str, Any]: ...
-    def set_params(self, params: dict[str, Any]) -> None: ...
+    def get_params(self) -> dict[str, Any]:
+        """Return the learned parameters of the node."""
+        ...
+
+    def set_params(self, params: dict[str, Any]) -> None:
+        """Restore the learned parameters of the node."""
+        ...
 
 
 # --------------
@@ -43,7 +52,9 @@ class HasRunningConfigNode(Protocol):
     """Protocol for nodes that have a running configuration."""
 
     @property
-    def config(self) -> HasRunningConfigConfig: ...
+    def config(self) -> HasRunningConfigConfig:
+        """Return the node config that holds the running configuration."""
+        ...
 
 
 # --------------
@@ -67,4 +78,6 @@ class AcceptsInputsSourceNode(Protocol):
 class IsValidTorchModule(Protocol):
     """Protocol for objects that can be checked for being a valid PyTorch module."""
 
-    def train_module(self, data: Any) -> None: ...
+    def train_module(self, data: Any) -> None:
+        """Train the module on *data*."""
+        ...

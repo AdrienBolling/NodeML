@@ -4,13 +4,13 @@ Wraps ``torchmetrics.Precision`` and exposes it as a NodeML
 :class:`~nodeml.core.nodes.metrics.metric_node.MetricNode`.  The node expects
 two input ports:
 
-* ``pred``   – predicted class probabilities or logits ``(batch, num_classes)``
+* ``pred``   - predicted class probabilities or logits ``(batch, num_classes)``
                as a numpy array (for multiclass), or ``(batch, 1)`` for binary
-* ``target`` – ground-truth class labels ``(batch, 1)`` as a numpy integer array
+* ``target`` - ground-truth class labels ``(batch, 1)`` as a numpy integer array
 
 and emits one output port:
 
-* ``score`` – scalar metric value ``(1, 1)`` as a numpy array
+* ``score`` - scalar metric value ``(1, 1)`` as a numpy array
 
 Precision (positive predictive value) measures the fraction of positive
 predictions that are actually correct.  Supports both binary and multiclass
@@ -158,6 +158,7 @@ class PrecisionNode(
         Args:
             config: Full node configuration including running config,
                 input ports, and output ports.
+
         """
         self._config = config
         rc = config.running_config
@@ -171,14 +172,13 @@ class PrecisionNode(
 
     # --- MetricNode interface ------------------------------------------------
 
-    def update(
-        self, data: dict[str, tuple[np.ndarray, TabularDataContext]]
-    ) -> None:
+    def update(self, data: dict[str, tuple[np.ndarray, TabularDataContext]]) -> None:
         """Feed predictions and targets into the torchmetrics accumulator.
 
         Args:
             data: Dictionary mapping port names to ``(array, context)``
                 tuples.  Expected keys are ``"pred"`` and ``"target"``.
+
         """
         pred, _ = data["pred"]
         target, _ = data["target"]
@@ -196,6 +196,7 @@ class PrecisionNode(
             Dictionary with a single ``"score"`` key mapping to a tuple of
             the scalar precision value as a ``(1, 1)`` numpy array and the
             corresponding :class:`TabularDataContext`.
+
         """
         value = self._metric.compute().item()
         self._metric.reset()

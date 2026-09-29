@@ -4,13 +4,13 @@ Wraps ``torchmetrics.F1Score`` and exposes it as a NodeML
 :class:`~nodeml.core.nodes.metrics.metric_node.MetricNode`.  The node expects
 two input ports:
 
-* ``pred``   – predicted class probabilities or logits ``(batch, num_classes)``
+* ``pred``   - predicted class probabilities or logits ``(batch, num_classes)``
                as a numpy array (for multiclass), or ``(batch, 1)`` for binary
-* ``target`` – ground-truth class labels ``(batch, 1)`` as a numpy integer array
+* ``target`` - ground-truth class labels ``(batch, 1)`` as a numpy integer array
 
 and emits one output port:
 
-* ``score`` – scalar metric value ``(1, 1)`` as a numpy array
+* ``score`` - scalar metric value ``(1, 1)`` as a numpy array
 
 F1 is the harmonic mean of precision and recall, providing a single measure
 that balances both.  Supports binary and multiclass tasks with configurable
@@ -162,6 +162,7 @@ class F1(
     metadata = F1ScoreMetadata()
 
     def __init__(self, *, config: F1ScoreConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         rc = config.running_config
         metric_kwargs: dict = {"task": rc.task, "zero_division": rc.zero_division}
@@ -174,9 +175,7 @@ class F1(
 
     # --- MetricNode interface ------------------------------------------------
 
-    def update(
-        self, data: dict[str, tuple[np.ndarray, TabularDataContext]]
-    ) -> None:
+    def update(self, data: dict[str, tuple[np.ndarray, TabularDataContext]]) -> None:
         """Feed predictions and targets into the torchmetrics accumulator."""
         pred, _ = data["pred"]
         target, _ = data["target"]

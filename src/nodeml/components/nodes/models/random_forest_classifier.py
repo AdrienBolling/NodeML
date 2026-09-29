@@ -4,12 +4,12 @@ Wraps ``sklearn.ensemble.RandomForestClassifier`` and exposes it as a NodeML
 :class:`~nodeml.core.nodes.models.model.Model` node.  The node expects two
 input ports:
 
-* ``X`` – feature matrix ``(batch, features)`` as a numpy array
-* ``y`` – target vector ``(batch, 1)`` as a numpy array (training / evaluation only)
+* ``X`` - feature matrix ``(batch, features)`` as a numpy array
+* ``y`` - target vector ``(batch, 1)`` as a numpy array (training / evaluation only)
 
 and emits one output port:
 
-* ``pred`` – predicted class probabilities ``(batch, num_classes)`` as a numpy array
+* ``pred`` - predicted class probabilities ``(batch, num_classes)`` as a numpy array
 
 The ``predict`` method returns class probabilities via ``predict_proba`` when
 available, falling back to ``predict`` otherwise.
@@ -18,20 +18,20 @@ available, falling back to ``predict`` otherwise.
 from typing import Any, Literal
 
 import numpy as np
-from ray import tune
 from pydantic import Field
+from ray import tune
 from sklearn.ensemble import RandomForestClassifier as SklearnRandomForestClassifier
 
+from nodeml.components.utils.sklearn_params import (
+    get_sklearn_fitted_params,
+    set_sklearn_fitted_params,
+)
 from nodeml.core.common.data.data import (
     ArrayLikeEnum,
     DataCategoryEnum,
     DataStructureEnum,
     TabularDataContext,
     tabular_context_from_dict_dump,
-)
-from nodeml.components.utils.sklearn_params import (
-    get_sklearn_fitted_params,
-    set_sklearn_fitted_params,
 )
 from nodeml.core.common.enums import NodeExecutionMode
 from nodeml.core.nodes.models.model import (

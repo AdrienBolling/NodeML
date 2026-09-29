@@ -10,8 +10,6 @@ The fitted category mapping is persisted via :meth:`get_params` /
 :meth:`set_params` for checkpointing.
 """
 
-from typing import Any
-
 import numpy as np
 import pandas as pd
 from pydantic import Field
@@ -111,25 +109,25 @@ class OneHotEncoding(
     :meth:`transform` applies the same encoding deterministically, producing
     columns named ``<original_col>_<category>``.
 
-    Example
+    Example:
     -------
     >>> node = OneHotEncoding(config=OneHotEncodingConfig())
     >>> out = node.node_fit_transform({"input": (df_cat, ctx_cat)})
     >>> encoded_df, encoded_ctx = out["output"]
+
     """
 
     metadata = OneHotEncodingMetadata()
 
     def __init__(self, *, config: OneHotEncodingConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         self._params: _OneHotParams = {}
         self._fitted = False
 
     # --- TransformNode interface ------------------------------------------
 
-    def fit(
-        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
-    ) -> None:
+    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
         """Learn unique categories for every column."""
         df, _ = data["input"]
         self._params = {

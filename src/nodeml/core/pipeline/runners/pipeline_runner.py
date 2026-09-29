@@ -101,7 +101,11 @@ class PipelineRunner(ABC):
     # We will see where it belongs on the long run.
 
     @abstractmethod
-    def train(self, input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]] | None = None) -> None:
+    def train(
+        self,
+        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]]
+        | None = None,
+    ) -> None:
         """Train the pipeline end-to-end.
 
         Args:
@@ -114,7 +118,9 @@ class PipelineRunner(ABC):
 
     @abstractmethod
     def evaluate(
-        self, input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]] | None = None
+        self,
+        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]]
+        | None = None,
     ) -> Mapping[str, tuple[ArrayLike, DataContext]]:
         """Evaluate the pipeline and return computed metrics.
 
@@ -130,7 +136,9 @@ class PipelineRunner(ABC):
 
     @abstractmethod
     def infer(
-        self, input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]] | None = None
+        self,
+        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]]
+        | None = None,
     ) -> Mapping[str, tuple[ArrayLike, DataContext]]:
         """Run inference and return the sink node outputs.
 

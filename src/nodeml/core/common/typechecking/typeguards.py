@@ -118,7 +118,7 @@ def has_hyperparameter_space(obj: Node) -> TypeGuard[HasHyperparameterSpace]:
 
     """
     return hasattr(obj, "hyperparameter_space") and isinstance(
-        obj.hyperparameter_space,  # type: ignore
+        obj.hyperparameter_space,  # type: ignore[attr-defined]
         dict,
     )
 
@@ -136,9 +136,9 @@ def has_params(obj: Node) -> TypeGuard[HasParamsNode]:
     """
     return (
         hasattr(obj, "get_params")
-        and callable(obj.get_params)  # type: ignore
+        and callable(obj.get_params)  # type: ignore[attr-defined]
         and hasattr(obj, "set_params")
-        and callable(obj.set_params)  # type: ignore
+        and callable(obj.set_params)  # type: ignore[attr-defined]
     )
 
 
@@ -182,7 +182,7 @@ def accepts_inputs_source_node(node: Node) -> TypeGuard[AcceptsInputsSourceNode]
 
     """
     if hasattr(node, "accepts_inputs") and node.config.node_type == NodeType.SOURCE:
-        return node.accepts_inputs  # type: ignore
+        return node.accepts_inputs  # type: ignore[attr-defined]
     return False
 
 

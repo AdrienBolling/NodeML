@@ -5,7 +5,6 @@ from __future__ import annotations
 import numpy as np
 
 from nodeml.core.common.data.data import NumericalData, TabularDataContext
-
 from tests.shims.nodes import MeanModel, MeanModelConfig
 
 

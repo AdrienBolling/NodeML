@@ -274,7 +274,9 @@ class TestPipelineHash:
         assert p_default.hash() != p_renamed.hash()
 
     def test_hash_ignores_node_config_instance_uuid(self) -> None:
-        """Two ``NodeConfig`` instances with identical fields have different UUIDs;
-        the pipeline hash must not be perturbed by that.
+        """Ignore the per-instance UUID of ``NodeConfig`` in the hash.
+
+        Two ``NodeConfig`` instances with identical fields have different
+        UUIDs; the pipeline hash must not change because of that.
         """
         assert _build_linear_pipeline().hash() == _build_linear_pipeline().hash()

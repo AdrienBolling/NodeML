@@ -15,12 +15,14 @@ class Data:
     @property
     def shape(self) -> tuple[int, ...]:
         """Return the shape of the data."""
-        raise NotImplementedError("Subclasses must implement the shape property.")
+        msg = "Subclasses must implement the shape property."
+        raise NotImplementedError(msg)
 
     @property
     def dtype(self) -> str:
         """Return the dtype of the data."""
-        raise NotImplementedError("Subclasses must implement the dtype property.")
+        msg = "Subclasses must implement the dtype property."
+        raise NotImplementedError(msg)
 
 
 @dataclass
@@ -235,15 +237,15 @@ class TabularData(Data):
             # from_pandas may infer categories, so validate *after* conversion.
             self.from_pandas(data, categories)
         elif categories is None:
-            raise ValueError(
-                "Categories must be provided for numpy and torch data, or infer_categories must be set to True to infer categories from dtypes."
-            )
+            msg = "Categories must be provided for numpy and torch data, or infer_categories must be set to True to infer categories from dtypes."
+            raise ValueError(msg)
         elif isinstance(data, np.ndarray):
             self.from_numpy(data, columns, dtypes, categories)
         elif isinstance(data, torch.Tensor):
             self.from_tensor(data, columns, dtypes, categories)
         else:
-            raise ValueError(f"Unsupported data type: {type(data)}")
+            msg = f"Unsupported data type: {type(data)}"
+            raise ValueError(msg)
 
     # --- Convenience API ---
     @property
@@ -279,7 +281,8 @@ class TabularData(Data):
     def dtype(self) -> str:
         """Return "mixed_data" if the data has mixed categories, otherwise return the category of the data."""
         if self._categories is None:
-            raise ValueError("Data is not initialized yet.")
+            msg = "Data is not initialized yet."
+            raise ValueError(msg)
         if all(cat == self._categories[0] for cat in self._categories):
             return str(INVERSE_DATA_CATEGORY_MAPPING[self._categories[0]])
         return str(DataCategoryEnum.MIXED)
@@ -298,7 +301,8 @@ class TabularData(Data):
     def categories(self) -> list[type[DataCategory]]:
         """Return the categories of the data."""
         if self._categories is None:
-            raise ValueError("Data is not initialized yet.")
+            msg = "Data is not initialized yet."
+            raise ValueError(msg)
         return self._categories
 
     @property
@@ -308,7 +312,8 @@ class TabularData(Data):
         This is an aggregate, if all features are of the same category, return that category, otherwise return mixed.
         """
         if self._categories is None:
-            raise ValueError("Data is not initialized yet.")
+            msg = "Data is not initialized yet."
+            raise ValueError(msg)
         if all(cat == self._categories[0] for cat in self._categories):
             return self._categories[0]
         return MixedData
@@ -341,28 +346,27 @@ class TabularData(Data):
         """
         # Check that the data is 2D, has column names, and that the dtypes can be inferred.
         if data is not None and data.ndim != self._TABULAR_NDIM:
-            raise ValueError(
-                f"Data must be {self._TABULAR_NDIM}D, but got {data.ndim}D."
-            )
+            msg = f"Data must be {self._TABULAR_NDIM}D, but got {data.ndim}D."
+            raise ValueError(msg)
         if columns is None:
-            raise ValueError("Columns must be provided.")
+            msg = "Columns must be provided."
+            raise ValueError(msg)
         if dtypes is None:
-            raise ValueError("Dtypes must be provided.")
+            msg = "Dtypes must be provided."
+            raise ValueError(msg)
         if categories is None:
-            raise ValueError("Categories must be provided.")
+            msg = "Categories must be provided."
+            raise ValueError(msg)
         if data is not None:
             if len(columns) != data.shape[1]:
-                raise ValueError(
-                    f"Number of columns must match data shape, but got {len(columns)} columns and data with shape {data.shape}."
-                )
+                msg = f"Number of columns must match data shape, but got {len(columns)} columns and data with shape {data.shape}."
+                raise ValueError(msg)
             if len(dtypes) != data.shape[1]:
-                raise ValueError(
-                    f"Number of dtypes must match data shape, but got {len(dtypes)} dtypes and data with shape {data.shape}."
-                )
+                msg = f"Number of dtypes must match data shape, but got {len(dtypes)} dtypes and data with shape {data.shape}."
+                raise ValueError(msg)
             if len(categories) != data.shape[1]:
-                raise ValueError(
-                    f"Number of categories must match data shape, but got {len(categories)} categories and data with shape {data.shape}."
-                )
+                msg = f"Number of categories must match data shape, but got {len(categories)} categories and data with shape {data.shape}."
+                raise ValueError(msg)
         return True
 
     # --- Conversion FROM methods ---
@@ -404,7 +408,8 @@ class TabularData(Data):
                     )  # If we can't infer, we consider it mixed, which is the most permissive category.
             categories = inferred_categories
         if categories is not None and len(categories) != len(columns):
-            raise ValueError("Length of categories must match number of columns.")
+            msg = "Length of categories must match number of columns."
+            raise ValueError(msg)
 
         self._validate_data(data, columns, dtypes, categories)
 
@@ -481,11 +486,13 @@ class TabularData(Data):
 
         """
         if not self.is_initialized:
-            raise ValueError("Data is not initialized yet.")
+            msg = "Data is not initialized yet."
+            raise ValueError(msg)
         if (
             self._categories is None
         ):  # Typechecker stuff, could be removed without issues (tbi, do we really lose performance)
-            raise ValueError("Data is not initialized yet.")
+            msg = "Data is not initialized yet."
+            raise ValueError(msg)
         return (
             self._data,
             TabularDataContext(self._columns, self._dtypes, self._categories),
@@ -503,13 +510,15 @@ class TabularData(Data):
 
         """
         if not self.is_initialized:
-            raise ValueError("Data is not initialized yet.")
+            msg = "Data is not initialized yet."
+            raise ValueError(msg)
         if (
             self._categories is None
         ):  # Typechecker stuff, could be removed without issues
-            raise ValueError("Data is not initialized yet.")
+            msg = "Data is not initialized yet."
+            raise ValueError(msg)
         return (
-            self._data.values,
+            self._data.to_numpy(),
             TabularDataContext(self._columns, self._dtypes, self._categories),
         )
 
@@ -525,13 +534,15 @@ class TabularData(Data):
 
         """
         if not self.is_initialized:
-            raise ValueError("Data is not initialized yet.")
+            msg = "Data is not initialized yet."
+            raise ValueError(msg)
         if (
             self._categories is None
         ):  # Typechecker stuff, could be removed without issues
-            raise ValueError("Data is not initialized yet.")
+            msg = "Data is not initialized yet."
+            raise ValueError(msg)
         return (
-            torch.from_numpy(self._data.values),
+            torch.from_numpy(self._data.to_numpy()),
             TabularDataContext(self._columns, self._dtypes, self._categories),
         )
 
@@ -556,7 +567,7 @@ class TabularData(Data):
         )  # Display the DataFrame as HTML for better formatting in Jupyter notebooks
         return f"{self.__class__.__name__}\n{df.__str__()}(\nShape: {self.shape})"
 
-    def _repr_html_(self):
+    def _repr_html_(self) -> str:
         """Represent the TabularData as a pandas array with multi-index columns for column names, dtypes, and categories, in HTML format for better display in Jupyter notebooks."""
         col_names = [str(col) for col in self._columns]
         dtype_names = [str(dt) for dt in self._dtypes]
@@ -575,7 +586,7 @@ class TabularData(Data):
             ),
         )
         html = f"<h3>{self.__class__.__name__} (Shape: {self.shape})</h3>"
-        html += df._repr_html_()  # type: ignore
+        html += df._repr_html_()  # type: ignore[operator]
         return html
 
 

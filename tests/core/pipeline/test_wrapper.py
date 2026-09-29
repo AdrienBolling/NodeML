@@ -16,7 +16,6 @@ from nodeml.core.common.data.data import ArrayLike, DataContext
 from nodeml.core.pipeline.runners.pipeline_runner import PipelineRunner
 from nodeml.core.pipeline.runners.smart_runner import SmartRunner
 from nodeml.core.pipeline.runners.wrappers.wrapper import PipelineRunnerWrapper
-
 from tests.shims.pipelines import build_source_model_sink_pipeline
 
 

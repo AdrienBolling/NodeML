@@ -6,7 +6,6 @@ import pytest
 
 from nodeml.core.common.enums import NodeExecutionMode
 from nodeml.core.nodes.node import NodeConfig, NodeType, Port
-
 from tests.shims.nodes import (
     ConstantSource,
     ConstantSourceConfig,

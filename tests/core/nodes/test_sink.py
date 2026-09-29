@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from nodeml.core.nodes.data_sink.sink import Sink, SinkConfig
 from nodeml.core.nodes.node import NodeType
-
 from tests.shims.tabular import numerical_pair
 
 

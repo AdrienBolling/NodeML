@@ -3,8 +3,8 @@
 Splits a mixed-category DataFrame into two streams by reading the column
 semantics from the :class:`~nodeml.core.common.data.data.TabularDataContext`:
 
-* ``categorical`` – columns tagged as :class:`~nodeml.core.common.data.data.CategoricalData`
-* ``numerical``   – columns tagged as :class:`~nodeml.core.common.data.data.NumericalData`
+* ``categorical`` - columns tagged as :class:`~nodeml.core.common.data.data.CategoricalData`
+* ``numerical``   - columns tagged as :class:`~nodeml.core.common.data.data.NumericalData`
 
 Columns tagged as :class:`~nodeml.core.common.data.data.MixedData` are
 excluded from both outputs.  Using the context (not pandas dtype
@@ -16,7 +16,7 @@ The two retained column lists are persisted via :meth:`get_params` /
 re-fitting.
 """
 
-from typing import Any, cast
+from typing import cast
 
 import pandas as pd
 from pydantic import Field
@@ -141,11 +141,13 @@ class DataCategoryFilter(
     >>> node = DataCategoryFilter(config=DataCategoryFilterConfig())
     >>> node.node_fit_transform({"input": (df, ctx)})
     {"categorical": (df_cat, ctx_cat), "numerical": (df_num, ctx_num)}
+
     """
 
     metadata = DataCategoryFilterMetadata()
 
     def __init__(self, *, config: DataCategoryFilterConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         self._params: _DataCategoryFilterParams = {
             "categorical": [],
@@ -156,9 +158,7 @@ class DataCategoryFilter(
 
     # --- TransformNode interface ------------------------------------------
 
-    def fit(
-        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
-    ) -> None:
+    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
         """Identify categorical and numerical columns from the input context.
 
         Parameters
@@ -167,6 +167,7 @@ class DataCategoryFilter(
             Must contain key ``"input"``.  Only the
             :class:`~nodeml.core.common.data.data.TabularDataContext` is
             read; the DataFrame values are not inspected.
+
         """
         _, ctx = data["input"]
         self._params = {
@@ -198,11 +199,12 @@ class DataCategoryFilter(
             Always contains both ``"categorical"`` and ``"numerical"`` keys.
             Either DataFrame may have zero columns if no matching columns
             were found during :meth:`fit`.
+
         """
         df, ctx = data["input"]
         return {
             "categorical": self._select(df, ctx, self._params["categorical"]),
-            "numerical":   self._select(df, ctx, self._params["numerical"]),
+            "numerical": self._select(df, ctx, self._params["numerical"]),
         }
 
     def get_params(self) -> _DataCategoryFilterParams:
@@ -212,6 +214,7 @@ class DataCategoryFilter(
         -------
         dict
             ``{"categorical": [...], "numerical": [...]}``
+
         """
         return self._params
 
@@ -223,6 +226,7 @@ class DataCategoryFilter(
         params:
             Dict with keys ``"categorical"`` and ``"numerical"``, each
             mapping to a list of column names.
+
         """
         self._params = params
         self._fitted = True
@@ -242,9 +246,7 @@ class DataCategoryFilter(
             TabularDataContext(
                 columns=[c for c in ctx.columns if c in keep],
                 dtypes=[
-                    d
-                    for c, d in zip(ctx.columns, ctx.dtypes, strict=True)
-                    if c in keep
+                    d for c, d in zip(ctx.columns, ctx.dtypes, strict=True) if c in keep
                 ],
                 categories=[
                     cat

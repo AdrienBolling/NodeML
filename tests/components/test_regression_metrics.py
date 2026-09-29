@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -201,6 +202,33 @@ class TestMultiOutput:
 
         with pytest.raises(NodeInputError, match="same shape"):
             _score(_node("MSE"), pred[:, :1], target)
+
+
+class TestMAPE:
+    def test_zero_targets_log_a_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        pred = np.array([[1.0], [2.0], [3.0]])
+        target = np.array([[0.0], [2.0], [3.0]])
+
+        with caplog.at_level(logging.WARNING, logger="nodeml"):
+            score = _score(_node("MAPE"), pred, target)
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        assert "zero" in warnings[0].getMessage()
+        assert warnings[0].context["zero_targets"] == 1
+        # torchmetrics divides by an epsilon: the score is large, not inf.
+        assert np.isfinite(score).all()
+        assert score[0, 0] > 1e4
+
+    def test_no_warning_without_zero_targets(
+        self, caplog: pytest.LogCaptureFixture, regression_pair
+    ) -> None:
+        pred, target = regression_pair
+
+        with caplog.at_level(logging.WARNING, logger="nodeml"):
+            _score(_node("MAPE"), pred, target)
+
+        assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 
 class TestMetricState:

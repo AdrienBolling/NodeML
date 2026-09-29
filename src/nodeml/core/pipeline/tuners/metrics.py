@@ -50,8 +50,8 @@ def metric_to_scalars(
         ``{f"{name}.{column}": value}`` for each column.
 
     Raises:
-        ValueError: If the metric has more than one row, or a value is not
-            a number.
+        ValueError: If the metric has no value, more than one row, or a
+            value that is not a number.
 
     """
     columns: list[str] | None = None
@@ -68,7 +68,7 @@ def metric_to_scalars(
 
     if values.size == 1:
         return {name: _to_float(name, values.reshape(-1)[0])}
-    if values.ndim != _TABLE_NDIM or values.shape[0] != 1:
+    if values.size == 0 or values.ndim != _TABLE_NDIM or values.shape[0] != 1:
         message = (
             f"Metric '{name}' has the shape {values.shape}. A metric must have "
             "one value, or one row of values."

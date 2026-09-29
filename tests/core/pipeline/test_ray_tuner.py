@@ -483,6 +483,20 @@ class TestConvertMultiValueMetrics:
         with pytest.raises(ValueError, match="one row"):
             tuner._convert_metrics({"m": (pd.DataFrame([[1.0], [2.0]]), _scalar_ctx())})
 
+    def test_empty_metric_raises(self) -> None:
+        tuner = RayPipelineTuner(
+            _build_filter_pipeline(), config=RayPipelineTunerConfig()
+        )
+        with pytest.raises(ValueError, match="one value"):
+            tuner._convert_metrics({"m": (np.empty((1, 0)), _scalar_ctx())})
+
+    def test_non_numeric_value_raises(self) -> None:
+        tuner = RayPipelineTuner(
+            _build_filter_pipeline(), config=RayPipelineTunerConfig()
+        )
+        with pytest.raises(ValueError, match="not a number"):
+            tuner._convert_metrics({"m": (pd.DataFrame([["high"]]), _scalar_ctx())})
+
 
 class TestTrainable:
     """Run one trial in-process: the Ray session calls are replaced."""

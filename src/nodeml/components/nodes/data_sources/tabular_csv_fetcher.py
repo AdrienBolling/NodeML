@@ -4,6 +4,9 @@ Loads a CSV file and its companion context JSON file, validates their
 consistency, and exposes the result as a single ``"output"`` port carrying
 a ``pd.DataFrame`` + ``TabularDataContext``.
 
+The files are read again at the start of each runner call, from the paths
+of the current execution mode (see :class:`TabularCSVFetcherRunningConfig`).
+
 The context JSON is expected to follow the ``TabularDataContext.dump_dict``
 schema::
 
@@ -27,6 +30,7 @@ from nodeml.core.common.data.data import (
     TabularDataContext,
     tabular_context_from_dict_dump,
 )
+from nodeml.core.common.enums import NodeExecutionMode
 from nodeml.core.nodes.data_source.data_source import (
     DataSourceConfig,
     DataSourceMetadata,
@@ -48,13 +52,18 @@ class TabularCSVFetcherMetadata(DataSourceMetadata):
 class TabularCSVFetcherRunningConfig(DataSourceRunningConfig):
     """Run-time configuration for the TabularCSVFetcher.
 
-    Attributes
-    ----------
-    csv_path:
-        Path to the CSV file to load.
-    context_path:
-        Path to the JSON file containing the ``TabularDataContext`` metadata
-        (columns, dtypes, categories).
+    ``csv_path`` and ``context_path`` are used in every execution mode.  Set
+    the ``inference_*`` or ``evaluation_*`` paths to read other files in
+    that mode; a path left to ``None`` falls back to the default path.
+
+    Attributes:
+        csv_path: Path to the CSV file to load.
+        context_path: Path to the JSON file containing the
+            ``TabularDataContext`` metadata (columns, dtypes, categories).
+        inference_csv_path: CSV file for the inference mode.
+        inference_context_path: Context file for the inference mode.
+        evaluation_csv_path: CSV file for the evaluation mode.
+        evaluation_context_path: Context file for the evaluation mode.
 
     """
 
@@ -66,6 +75,36 @@ class TabularCSVFetcherRunningConfig(DataSourceRunningConfig):
         default="",
         description="Path to the JSON context file (columns, dtypes, categories).",
     )
+    inference_csv_path: str | None = Field(
+        default=None,
+        description="CSV file for the inference mode. None uses csv_path.",
+    )
+    inference_context_path: str | None = Field(
+        default=None,
+        description="Context file for the inference mode. None uses context_path.",
+    )
+    evaluation_csv_path: str | None = Field(
+        default=None,
+        description="CSV file for the evaluation mode. None uses csv_path.",
+    )
+    evaluation_context_path: str | None = Field(
+        default=None,
+        description="Context file for the evaluation mode. None uses context_path.",
+    )
+
+    def paths_for(self, mode: NodeExecutionMode) -> tuple[str, str]:
+        """Return the ``(csv_path, context_path)`` pair for *mode*."""
+        if mode == NodeExecutionMode.INFERENCE:
+            return (
+                self.inference_csv_path or self.csv_path,
+                self.inference_context_path or self.context_path,
+            )
+        if mode == NodeExecutionMode.EVALUATION:
+            return (
+                self.evaluation_csv_path or self.csv_path,
+                self.evaluation_context_path or self.context_path,
+            )
+        return self.csv_path, self.context_path
 
 
 class TabularCSVFetcherConfig(
@@ -127,10 +166,16 @@ class TabularCSVFetcher(
     # --- DataSourceNode interface --------------------------------------------
 
     def setup_source(self) -> None:
-        """Validate that the CSV and context files exist and are consistent."""
-        rc = self._config.running_config
-        csv_path = Path(rc.csv_path)
-        ctx_path = Path(rc.context_path)
+        """Load the CSV and context files of the current execution mode.
+
+        Raises:
+            FileNotFoundError: If a file does not exist.
+            ValueError: If the context does not match the CSV columns.
+
+        """
+        csv_str, ctx_str = self._config.running_config.paths_for(self.execution_mode)
+        csv_path = Path(csv_str)
+        ctx_path = Path(ctx_str)
 
         if not csv_path.is_file():
             msg = f"CSV file not found: {csv_path}"
@@ -167,8 +212,8 @@ class TabularCSVFetcher(
         """Ensure the context JSON is consistent with the CSV data.
 
         Checks that the three context lists (columns, dtypes, categories) all
-        have the same length and that this length equals the number of columns
-        in the DataFrame.
+        have the same length, and that the context names the CSV columns in
+        the same order.
         """
         n_data_cols = df.shape[1]
         n_ctx_columns = len(ctx.columns)
@@ -191,6 +236,8 @@ class TabularCSVFetcher(
                 f"context defines {n_ctx_columns} columns but the CSV has {n_data_cols}."
             )
             raise ValueError(msg)
+        # Same count: the names must also match, in the same order.
+        ctx.check_columns(df.columns)
 
     # --- Convenience ---------------------------------------------------------
 

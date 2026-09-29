@@ -3,6 +3,11 @@
 Scales numerical columns to the [0, 1] range::
 
     x_scaled = (x - min) / (max - min)
+
+The scaler learns the **min** and the **max** of each column during
+:meth:`fit` and uses them again at :meth:`transform` time.  A column with
+a zero range (for example, a constant column) is only centred on its min.
+See :mod:`._affine_scaler` for the shared behaviour.
 """
 
 import pandas as pd
@@ -12,18 +17,16 @@ from nodeml.core.common.data.data import (
     ArrayLikeEnum,
     DataCategoryEnum,
     DataStructureEnum,
-    TabularDataContext,
 )
 from nodeml.core.nodes.node import Port
 from nodeml.core.nodes.transform.transform import (
     TransformConfig,
     TransformHyperParameters,
     TransformMetadata,
-    TransformNode,
     TransformRunningConfig,
 )
 
-type _MinMaxScalerParams = dict[str, dict[str, float]]
+from ._affine_scaler import AffineScaler, ScalerParams
 
 
 class MinMaxScalerMetadata(TransformMetadata):
@@ -43,7 +46,7 @@ class MinMaxScalerHyperParameters(TransformHyperParameters):
 
 
 class MinMaxScalerConfig(
-    TransformConfig[MinMaxScalerRunningConfig, MinMaxScalerHyperParameters]
+    TransformConfig[MinMaxScalerHyperParameters, MinMaxScalerRunningConfig]
 ):
     """Configuration for the MinMaxScaler node."""
 
@@ -77,70 +80,34 @@ class MinMaxScalerConfig(
     )
 
 
-class MinMaxScaler(
-    TransformNode[
-        pd.DataFrame,
-        TabularDataContext,
-        pd.DataFrame,
-        TabularDataContext,
-        _MinMaxScalerParams,
-    ]
-):
-    """Scale numerical columns to the [0, 1] range using per-column min and max."""
+class MinMaxScaler(AffineScaler):
+    """Scale numerical columns to the [0, 1] range with the min and max of each column.
+
+    Example:
+        >>> node = MinMaxScaler(config=MinMaxScalerConfig())
+        >>> out = node.node_fit_transform({"input": (df, ctx)})
+
+    """
 
     metadata = MinMaxScalerMetadata()
 
-    def __init__(self, *, config: MinMaxScalerConfig) -> None:
-        """Initialise the node with its configuration."""
-        self._config = config
-        self._params: _MinMaxScalerParams = {"min": {}, "max": {}}
-        self._fitted = False
+    @staticmethod
+    def _empty_params() -> ScalerParams:
+        """Return the params of a scaler that is not fitted."""
+        return {"min": {}, "max": {}}
 
-    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
-        """Learn per-column min and max from the input data.
-
-        Args:
-            data: Dictionary mapping port names to (DataFrame, context) tuples.
-
-        """
-        df, _ = data["input"]
+    @staticmethod
+    def _fit_statistics(df: pd.DataFrame) -> ScalerParams:
+        """Return the min and the max of each column of *df*."""
         mins = df.min()
         maxs = df.max()
-        self._params = {
+        return {
             "min": {col: float(mins[col]) for col in df.columns},
             "max": {col: float(maxs[col]) for col in df.columns},
         }
 
-    def transform(
-        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
-    ) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
-        """Apply min-max scaling to the input data.
-
-        Args:
-            data: Dictionary mapping port names to (DataFrame, context) tuples.
-
-        Returns:
-            Dictionary mapping port names to (scaled DataFrame, context) tuples.
-
-        """
-        df, ctx = data["input"]
-        col_min = pd.Series(self._params["min"])
-        col_max = pd.Series(self._params["max"])
-        col_range = col_max - col_min
-        col_range = col_range.replace(0.0, 1.0)
-        result = df.sub(col_min, axis=1).div(col_range, axis=1)
-        return {"output": (result, ctx)}
-
-    def get_params(self) -> _MinMaxScalerParams:
-        """Return the learned min and max parameters."""
-        return self._params
-
-    def set_params(self, params: _MinMaxScalerParams) -> None:
-        """Set the min and max parameters.
-
-        Args:
-            params: Dictionary with 'min' and 'max' keys mapping column names to values.
-
-        """
-        self._params = params
-        self._fitted = True
+    def _center_and_scale(self) -> tuple[pd.Series, pd.Series]:
+        """Return the min as the center and the range as the scale."""
+        col_min = pd.Series(self._params["min"], dtype="float64")
+        col_max = pd.Series(self._params["max"], dtype="float64")
+        return col_min, col_max - col_min

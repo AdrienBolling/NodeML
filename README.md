@@ -61,6 +61,44 @@ preds = runner.infer(input_data={"source": {"X": X_pair}})
 | [`custom_node.ipynb`](examples/custom_node.ipynb) | Creating and registering a custom node |
 | [`hyperparameter_tuning.ipynb`](examples/hyperparameter_tuning.ipynb) | Hyperparameter search with Ray Tune |
 | [`mlflow_logging.ipynb`](examples/mlflow_logging.ipynb) | Logging pipeline runs to MLflow |
+| [`counterfactuals.ipynb`](examples/counterfactuals.ipynb) | Counterfactual explanations with CELIA |
+
+## Counterfactual explanations
+
+`CounterfactualEvaluator` asks: *what must change in this input, so that the prediction moves into a target range?* It uses the [CELIA](https://github.com/serval-uni-lu/celia) library, which is an optional dependency:
+
+```bash
+uv sync --extra counterfactuals        # or: pip install "nodeml[counterfactuals]"
+```
+
+The evaluator rebuilds a trained pipeline, inserts a `PerturbationNode` (by default right after the data source), and gives the rest of the pipeline to CELIA as a black-box model. Each scenario (a CELIA method and a target range) runs on each sample as a Ray task. The report holds the baseline prediction of each sample, and the validity, distance, sparsity and constraint violations of each counterfactual. The original pipeline does not change.
+
+```python
+from nodeml.core.pipeline.counterfactuals import (
+    CounterfactualEvaluator, CounterfactualEvaluatorConfig, CounterfactualScenario,
+    FeatureConstraints, TargetRange,
+)
+
+evaluator = CounterfactualEvaluator.from_pipeline(
+    trained_pipeline,
+    config=CounterfactualEvaluatorConfig(
+        constraints=FeatureConstraints(immutable_columns=["age"]),
+    ),
+)
+report = evaluator.evaluate(
+    [CounterfactualScenario(
+        name="dice",
+        method="dice",
+        target=TargetRange(kind="relative", low=-0.4, high=-0.2),
+        generate_kwargs={"total_CFs": 3},
+    )],
+    samples=X.iloc[:5],
+    reference_input={"source": {"X": (X, X_context)}},
+)
+report.summary_frame()
+```
+
+Supported now: regression, with the DiCE and NNCE methods of CELIA.
 
 ## Installation
 

@@ -33,6 +33,11 @@ Transform
    :undoc-members:
    :show-inheritance:
 
+.. automodule:: nodeml.core.nodes.transform.perturbation
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Sink
 ----
 

@@ -30,6 +30,36 @@ Tuners
    :undoc-members:
    :show-inheritance:
 
+Counterfactuals
+---------------
+
+Needs the optional dependencies: ``pip install "nodeml[counterfactuals]"``.
+
+.. automodule:: nodeml.core.pipeline.counterfactuals.evaluator
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: nodeml.core.pipeline.counterfactuals.config
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: nodeml.core.pipeline.counterfactuals.report
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: nodeml.core.pipeline.counterfactuals.insertion
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: nodeml.core.pipeline.counterfactuals.celia_adapter
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Validation
 ----------
 

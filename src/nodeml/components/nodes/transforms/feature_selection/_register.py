@@ -8,7 +8,12 @@ from .correlation_filter import (
     CorrelationFilterHyperParameters,
     CorrelationFilterRunningConfig,
 )
-from .data_category_filter import DataCategoryFilter, DataCategoryFilterConfig
+from .data_category_filter import (
+    DataCategoryFilter,
+    DataCategoryFilterConfig,
+    DataCategoryFilterHyperParameters,
+    DataCategoryFilterRunningConfig,
+)
 from .missing_rate_filter import (
     MissingRateFilter,
     MissingRateFilterConfig,
@@ -29,6 +34,8 @@ def register_nodes() -> None:
         name="DataCategoryFilter",
         node_class=DataCategoryFilter,
         node_config_class=DataCategoryFilterConfig,
+        running_config_class=DataCategoryFilterRunningConfig,
+        hyperparameters_class=DataCategoryFilterHyperParameters,
     )
     NODE_REGISTRY.register(
         name="MissingRateFilter",

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+from nodeml.core.common.data.data import ArrayLikeEnum, DataCategoryEnum
 from nodeml.core.common.enums import NodeExecutionMode
 from nodeml.core.nodes.node import NodeConfig, NodeType, Port
-
 from tests.shims.nodes import (
     ConstantSource,
     ConstantSourceConfig,
@@ -112,3 +112,81 @@ class TestDataSourceBase:
         source.set_payload(payload)
         result = source.node_transform({})
         assert result["output"] is payload
+
+
+class TestNodeLifecycle:
+    def test_fresh_node_has_the_default_execution_mode(self) -> None:
+        node = IdentityTransform(config=IdentityTransformConfig())
+        assert node.execution_mode == NodeExecutionMode.DEFAULT
+
+    def test_mixin_init_errors_are_not_hidden(self) -> None:
+        # Before the fix, Node caught this TypeError and called the mixin
+        # again without the config, so the error was hidden.
+        calls: list[object] = []
+
+        class _FailingMixin:
+            _is_mixin = True
+
+            def __init__(self, *, config: object = None) -> None:
+                calls.append(config)
+                if config is not None:
+                    msg = "mixin failure"
+                    raise TypeError(msg)
+
+        class _Mixed(IdentityTransform, _FailingMixin):
+            pass
+
+        cfg = IdentityTransformConfig()
+        with pytest.raises(TypeError, match="mixin failure"):
+            _Mixed(config=cfg)
+        assert calls == [cfg]
+
+    def test_mixin_init_receives_the_config(self) -> None:
+        seen: list[object] = []
+
+        class _RecordingMixin:
+            _is_mixin = True
+
+            def __init__(self, *, config: object = None) -> None:
+                seen.append(config)
+
+        class _Mixed(IdentityTransform, _RecordingMixin):
+            pass
+
+        cfg = IdentityTransformConfig()
+        _Mixed(config=cfg)
+        assert seen == [cfg]
+
+    def test_mixin_before_node_base_is_rejected(self) -> None:
+        class _Mixin:
+            _is_mixin = True
+
+        with pytest.raises(TypeError, match="must be placed after"):
+
+            class _Wrong(_Mixin, IdentityTransform):  # type: ignore[misc]
+                pass
+
+
+class TestPortAssignment:
+    def test_assigned_modes_are_validated(self) -> None:
+        port = Port(
+            arr_type=ArrayLikeEnum.PANDAS,
+            data_category=DataCategoryEnum.NUMERICAL,
+            data_shape="batch feature",
+            desc="test",
+        )
+        port.mode = ["training", "evaluation"]  # type: ignore[assignment]
+        assert port.mode == [NodeExecutionMode.TRAINING, NodeExecutionMode.EVALUATION]
+        assert all(isinstance(mode, NodeExecutionMode) for mode in port.mode)
+
+    def test_an_unknown_mode_is_rejected(self) -> None:
+        from pydantic import ValidationError
+
+        port = Port(
+            arr_type=ArrayLikeEnum.PANDAS,
+            data_category=DataCategoryEnum.NUMERICAL,
+            data_shape="batch feature",
+            desc="test",
+        )
+        with pytest.raises(ValidationError):
+            port.mode = ["train"]  # type: ignore[assignment]

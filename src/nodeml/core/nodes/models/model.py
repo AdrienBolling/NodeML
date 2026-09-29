@@ -1,7 +1,6 @@
 """Define the base Model class for the NodeML Framework."""
 
 from abc import ABC, abstractmethod
-from typing import TypeVar
 
 from pydantic.main import BaseModel
 
@@ -36,11 +35,7 @@ class ModelHyperParameters(BaseModel):
     """
 
 
-H = TypeVar("H", bound=ModelHyperParameters)
-R = TypeVar("R", bound=ModelRunningConfig)
-
-
-class ModelConfig[H, R](NodeConfig):
+class ModelConfig[H: ModelHyperParameters, R: ModelRunningConfig](NodeConfig):
     """Base configuration for all Models in the NodeML Framework.
 
     Generic over two type parameters:

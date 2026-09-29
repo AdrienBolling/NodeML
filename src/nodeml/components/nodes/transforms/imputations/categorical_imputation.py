@@ -2,19 +2,26 @@
 
 Fills missing values in categorical columns using one of two strategies:
 
-* ``"most_frequent"`` – replace NaNs with the most frequent value per column
-  (learned at fit time).
-* ``"constant"``      – replace NaNs with a user-supplied constant string.
+* ``"most_frequent"`` - replace NaNs with the most frequent value per column
+  (learned at fit time).  A column with only missing values gets ``value``.
+* ``"constant"``      - replace NaNs with a user-supplied constant string.
+
+The output keeps the dtype of each column when the fill value fits it.  A
+pandas ``Categorical`` column gets the fill value as a new category when
+necessary.  When the fill value does not fit the dtype (for example, the
+string ``"missing"`` in an ``Int64`` column), the column becomes ``object``.
 
 Per-column fill values are persisted via :meth:`get_params` /
 :meth:`set_params` for checkpointing.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
+import numpy as np
 import pandas as pd
 from pydantic import Field
 
+from nodeml.components.utils.dataframe import check_fitted_columns, fill_missing
 from nodeml.core.common.data.data import (
     ArrayLikeEnum,
     DataCategoryEnum,
@@ -30,8 +37,8 @@ from nodeml.core.nodes.transform.transform import (
     TransformRunningConfig,
 )
 
-# Serialisable params: column name -> fill value.
-type _CategoricalImputationParams = dict[str, str]
+# Serialisable params: column name -> fill value (a Python scalar).
+type _CategoricalImputationParams = dict[str, Any]
 
 
 class CategoricalImputationMetadata(TransformMetadata):
@@ -67,8 +74,8 @@ class CategoricalImputationHyperParameters(TransformHyperParameters):
 
 class CategoricalImputationConfig(
     TransformConfig[
-        CategoricalImputationRunningConfig,
         CategoricalImputationHyperParameters,
+        CategoricalImputationRunningConfig,
     ],
 ):
     """Full configuration for the CategoricalImputation node."""
@@ -118,53 +125,99 @@ class CategoricalImputation(
 ):
     """Fill missing values in categorical columns.
 
-    Example
-    -------
-    >>> cfg = CategoricalImputationConfig(
-    ...     hyperparameters=CategoricalImputationHyperParameters(strategy="constant", value="N/A"),
-    ... )
-    >>> node = CategoricalImputation(config=cfg)
-    >>> out = node.node_fit_transform({"input": (df, ctx)})
+    Example:
+        >>> cfg = CategoricalImputationConfig(
+        ...     hyperparameters=CategoricalImputationHyperParameters(
+        ...         strategy="constant", value="N/A"
+        ...     ),
+        ... )
+        >>> node = CategoricalImputation(config=cfg)
+        >>> out = node.node_fit_transform({"input": (df, ctx)})
+
     """
 
     metadata = CategoricalImputationMetadata()
 
     def __init__(self, *, config: CategoricalImputationConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         self._params: _CategoricalImputationParams = {}
         self._fitted = False
 
     # --- TransformNode interface ------------------------------------------
 
-    def fit(
-        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
-    ) -> None:
-        """Learn per-column fill values from the training data."""
+    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
+        """Learn the fill value of each column of ``data["input"]``.
+
+        Args:
+            data: Must contain the key ``"input"``.
+
+        """
         df, _ = data["input"]
         hp = self._config.hyperparameters
 
         match hp.strategy:
             case "most_frequent":
                 self._params = {
-                    col: str(df[col].mode().iloc[0]) if not df[col].mode().empty else hp.value
-                    for col in df.columns
+                    col: _most_frequent(df[col], default=hp.value) for col in df.columns
                 }
             case "constant":
-                self._params = {col: hp.value for col in df.columns}
+                self._params = dict.fromkeys(df.columns, hp.value)
 
     def transform(
         self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
     ) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
-        """Fill missing values using the values learned at fit time."""
+        """Fill the missing values with the values learned during fit.
+
+        Args:
+            data: Must contain the key ``"input"``.
+
+        Returns:
+            ``{"output": (df, ctx)}``.  The context describes the output
+            dtypes.
+
+        Raises:
+            NodeInputError: If the input columns are not the fitted columns.
+
+        """
         df, ctx = data["input"]
-        result = df.fillna(self._params)
-        return {"output": (result, ctx)}
+        check_fitted_columns(
+            self._params, df.columns, node_name="CategoricalImputation"
+        )
+        result = df.copy()
+        for col in df.columns:
+            result[col] = fill_missing(
+                df[col], self._params[col], fallback_dtype="object"
+            )
+        return {"output": (result, ctx.aligned_to(result))}
 
     def get_params(self) -> _CategoricalImputationParams:
-        """Return the per-column fill values."""
+        """Return the fill value of each column.
+
+        Returns:
+            A mapping of column name to fill value.
+
+        """
         return self._params
 
     def set_params(self, params: _CategoricalImputationParams) -> None:
-        """Restore previously fitted fill values."""
+        """Restore the fill values returned by :meth:`get_params`.
+
+        Args:
+            params: The params of a fitted CategoricalImputation node.
+
+        """
         self._params = params
         self._fitted = True
+
+
+def _most_frequent(series: pd.Series, *, default: str) -> Any:
+    """Return the most frequent value of *series*, or *default* if it has none.
+
+    A numpy scalar becomes a Python scalar, so that the params stay simple.
+    """
+    mode = series.mode(dropna=True)
+    if mode.empty:
+        return default
+    value = mode.iloc[0]
+    return value.item() if isinstance(value, np.generic) else value

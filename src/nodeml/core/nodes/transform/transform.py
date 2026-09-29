@@ -1,7 +1,6 @@
 """Define the base Transform class for the NodeML Framework."""
 
 from abc import ABC, abstractmethod
-from typing import TypeVar
 
 from pydantic import BaseModel
 
@@ -31,11 +30,9 @@ class TransformHyperParameters(BaseModel):
     """
 
 
-R = TypeVar("R", bound=TransformRunningConfig)
-H = TypeVar("H", bound=TransformHyperParameters)
-
-
-class TransformConfig[H, R](NodeConfig):
+class TransformConfig[H: TransformHyperParameters, R: TransformRunningConfig](
+    NodeConfig
+):
     """Configuration for all Transform nodes in the NodeML Framework.
 
     Generic over two type parameters:
@@ -105,6 +102,28 @@ class TransformNode[D_I, D_C_I, D_O, D_C_O, P](Node[D_I, D_C_I, D_O, D_C_O], ABC
         """
         ...
 
+    @abstractmethod
+    def get_params(self) -> P:
+        """Return the learned state of the transform.
+
+        A stateless transform returns ``None`` or an empty dict.
+
+        Returns:
+            The learned parameters object of type ``P``.
+
+        """
+        ...
+
+    @abstractmethod
+    def set_params(self, params: P) -> None:
+        """Restore the learned state returned by :meth:`get_params`.
+
+        Args:
+            params: Parameters previously returned by :meth:`get_params`.
+
+        """
+        ...
+
     # --- API convenience ---
 
     @property
@@ -155,5 +174,6 @@ class TransformNode[D_I, D_C_I, D_O, D_C_O, P](Node[D_I, D_C_I, D_O, D_C_O], ABC
 
         """
         if hasattr(self, "_fitted") and not self._fitted:
-            raise ValueError("TransformNode must be fitted before calling transform.")
+            msg = "TransformNode must be fitted before calling transform."
+            raise ValueError(msg)
         return self.transform(data=data)

@@ -2,9 +2,13 @@
 
 Fills missing values in numerical columns using one of three strategies:
 
-* ``"mean"``     – replace NaNs with the per-column mean (learned at fit).
-* ``"median"``   – replace NaNs with the per-column median (learned at fit).
-* ``"constant"`` – replace NaNs with a user-supplied constant value.
+* ``"mean"``     - replace NaNs with the per-column mean (learned at fit).
+* ``"median"``   - replace NaNs with the per-column median (learned at fit).
+* ``"constant"`` - replace NaNs with a user-supplied constant value.
+
+The output keeps the dtype of each column when the fill value fits it.
+When it does not fit (for example, a mean of ``2.5`` in an ``Int64``
+column), the column becomes ``float64``.
 
 Per-column fill values are persisted via :meth:`get_params` /
 :meth:`set_params` for checkpointing.
@@ -15,6 +19,7 @@ from typing import Literal
 import pandas as pd
 from pydantic import Field
 
+from nodeml.components.utils.dataframe import check_fitted_columns, fill_missing
 from nodeml.core.common.data.data import (
     ArrayLikeEnum,
     DataCategoryEnum,
@@ -67,8 +72,8 @@ class NumericalImputationHyperParameters(TransformHyperParameters):
 
 class NumericalImputationConfig(
     TransformConfig[
-        NumericalImputationRunningConfig,
         NumericalImputationHyperParameters,
+        NumericalImputationRunningConfig,
     ],
 ):
     """Full configuration for the NumericalImputation node."""
@@ -118,28 +123,32 @@ class NumericalImputation(
 ):
     """Fill missing values in numerical columns.
 
-    Example
-    -------
-    >>> cfg = NumericalImputationConfig(
-    ...     hyperparameters=NumericalImputationHyperParameters(strategy="median"),
-    ... )
-    >>> node = NumericalImputation(config=cfg)
-    >>> out = node.node_fit_transform({"input": (df, ctx)})
+    Example:
+        >>> cfg = NumericalImputationConfig(
+        ...     hyperparameters=NumericalImputationHyperParameters(strategy="median"),
+        ... )
+        >>> node = NumericalImputation(config=cfg)
+        >>> out = node.node_fit_transform({"input": (df, ctx)})
+
     """
 
     metadata = NumericalImputationMetadata()
 
     def __init__(self, *, config: NumericalImputationConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         self._params: _NumericalImputationParams = {}
         self._fitted = False
 
     # --- TransformNode interface ------------------------------------------
 
-    def fit(
-        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
-    ) -> None:
-        """Learn per-column fill values from the training data."""
+    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
+        """Learn the fill value of each column of ``data["input"]``.
+
+        Args:
+            data: Must contain the key ``"input"``.
+
+        """
         df, _ = data["input"]
         hp = self._config.hyperparameters
 
@@ -149,21 +158,48 @@ class NumericalImputation(
             case "median":
                 self._params = {col: float(df[col].median()) for col in df.columns}
             case "constant":
-                self._params = {col: hp.value for col in df.columns}
+                self._params = dict.fromkeys(df.columns, hp.value)
 
     def transform(
         self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
     ) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
-        """Fill missing values using the values learned at fit time."""
+        """Fill the missing values with the values learned during fit.
+
+        Args:
+            data: Must contain the key ``"input"``.
+
+        Returns:
+            ``{"output": (df, ctx)}``.  The context describes the output
+            dtypes.
+
+        Raises:
+            NodeInputError: If the input columns are not the fitted columns.
+
+        """
         df, ctx = data["input"]
-        result = df.fillna(self._params)
-        return {"output": (result, ctx)}
+        check_fitted_columns(self._params, df.columns, node_name="NumericalImputation")
+        result = df.copy()
+        for col in df.columns:
+            result[col] = fill_missing(
+                df[col], self._params[col], fallback_dtype="float64"
+            )
+        return {"output": (result, ctx.aligned_to(result))}
 
     def get_params(self) -> _NumericalImputationParams:
-        """Return the per-column fill values."""
+        """Return the fill value of each column.
+
+        Returns:
+            A mapping of column name to fill value.
+
+        """
         return self._params
 
     def set_params(self, params: _NumericalImputationParams) -> None:
-        """Restore previously fitted fill values."""
+        """Restore the fill values returned by :meth:`get_params`.
+
+        Args:
+            params: The params of a fitted NumericalImputation node.
+
+        """
         self._params = params
         self._fitted = True

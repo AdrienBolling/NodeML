@@ -13,6 +13,9 @@ import plotly.graph_objects as go
 from nodeml.core.common.enums import NodeExecutionMode
 from nodeml.core.nodes.node import NodeConfig, NodeType
 
+# Edge labels are flipped outside [-limit, limit] degrees to stay upright.
+_UPRIGHT_LIMIT_DEG = 90
+
 if TYPE_CHECKING:
     from nodeml.core.pipeline.pipeline import Edge, Pipeline
 
@@ -73,7 +76,8 @@ def split_execution_graph_into_columns(
     node_columns: dict[str, int | None] = dict.fromkeys(main_graph.nodes)
 
     if sink_node is None:
-        raise ValueError("Pipeline must have a sink node to compute layout.")
+        msg = "Pipeline must have a sink node to compute layout."
+        raise ValueError(msg)
 
     longest_paths_to_sink = _longest_path_length_to(main_graph, sink_node)
     max_depth = max(longest_paths_to_sink.values())
@@ -89,8 +93,9 @@ def split_execution_graph_into_columns(
             node_columns[source_node] = -int(max_depth) - 1
 
     # Place metric nodes in their own column.
+    metric_node_names = set(pipeline.get_metric_node_names())
     for node in graph.nodes:
-        if pipeline.internal_config.nodes[node][1].node_type == NodeType.METRIC:
+        if node in metric_node_names:
             node_columns[node] = 1
 
     columns: dict[int, set[str]] = {}
@@ -224,25 +229,6 @@ def node_name_to_hover_text_mapping(
 # =============================================================================
 
 
-def get_execution_mode(
-    node_config: NodeConfig, port_name: str, source: bool
-) -> list[str]:
-    """Return the execution modes for a port.
-
-    Args:
-        node_config: Configuration of the node owning the port.
-        port_name: Name of the port to query.
-        source: ``True`` to read an input port, ``False`` for an output port.
-
-    Returns:
-        List of execution mode strings for the port.
-
-    """
-    if source:
-        return node_config.in_ports[port_name].mode
-    return node_config.out_ports[port_name].mode
-
-
 def edge_to_linestyle_mapping(
     edges: list[Edge],
     node_configs: dict[str, tuple[str, NodeConfig]],
@@ -265,7 +251,7 @@ def edge_to_linestyle_mapping(
 
         if source_type == NodeType.SOURCE or target_type == NodeType.SINK:
             mapping[(edge.source, edge.target)] = "-"
-        elif source_type == NodeType.METRIC or target_type == NodeType.METRIC:
+        elif NodeType.METRIC in (source_type, target_type):
             mapping[(edge.source, edge.target)] = "--"
         else:
             mapping[(edge.source, edge.target)] = "-"
@@ -611,10 +597,11 @@ def _sample_quadratic_bezier_with_exact_label_pose(
     lx, ly = _quadratic_bezier_point(p0, p1, control, t_label)
     dx, dy = _quadratic_bezier_derivative(p0, p1, control, t_label)
 
+    # Keep edge labels upright: flip angles outside [-90, 90] degrees.
     angle = math.degrees(math.atan2(dy, dx))
-    if angle > 90:
+    if angle > _UPRIGHT_LIMIT_DEG:
         angle -= 180
-    elif angle < -90:
+    elif angle < -_UPRIGHT_LIMIT_DEG:
         angle += 180
 
     return xs, ys, lx, ly, angle
@@ -873,7 +860,7 @@ def _auto_figsize(columns: dict[int, set[str]]) -> tuple[int, int]:
     return (width, height)
 
 
-def render_pipeline_graph_plotly(
+def render_pipeline_graph_plotly(  # noqa: C901, PLR0912, PLR0915 - one figure, built step by step
     pipeline: Pipeline,
     title: str = "Pipeline Graph",
     figsize: tuple[int, int] | None = None,
@@ -898,7 +885,7 @@ def render_pipeline_graph_plotly(
     version = pipeline.version
 
     graph = pipeline.graph
-    node_configs = pipeline.internal_config.nodes
+    node_configs = pipeline.resolved_nodes
 
     columns = split_execution_graph_into_columns(pipeline=pipeline)
     if figsize is None:

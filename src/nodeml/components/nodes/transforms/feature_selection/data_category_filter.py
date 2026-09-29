@@ -3,8 +3,8 @@
 Splits a mixed-category DataFrame into two streams by reading the column
 semantics from the :class:`~nodeml.core.common.data.data.TabularDataContext`:
 
-* ``categorical`` – columns tagged as :class:`~nodeml.core.common.data.data.CategoricalData`
-* ``numerical``   – columns tagged as :class:`~nodeml.core.common.data.data.NumericalData`
+* ``categorical`` - columns tagged as :class:`~nodeml.core.common.data.data.CategoricalData`
+* ``numerical``   - columns tagged as :class:`~nodeml.core.common.data.data.NumericalData`
 
 Columns tagged as :class:`~nodeml.core.common.data.data.MixedData` are
 excluded from both outputs.  Using the context (not pandas dtype
@@ -13,14 +13,13 @@ such as label-encoding, which assign a numeric dtype to a categorical column.
 
 The two retained column lists are persisted via :meth:`get_params` /
 :meth:`set_params` so the node can be checkpointed and restored without
-re-fitting.
+re-fitting.  Each output keeps the column order of the input.
 """
-
-from typing import Any, cast
 
 import pandas as pd
 from pydantic import Field
 
+from nodeml.components.utils.dataframe import check_fitted_columns
 from nodeml.core.common.data.data import (
     ArrayLikeEnum,
     CategoricalData,
@@ -64,8 +63,8 @@ type _DataCategoryFilterParams = dict[str, list[str]]
 
 class DataCategoryFilterConfig(
     TransformConfig[
-        DataCategoryFilterRunningConfig,
         DataCategoryFilterHyperParameters,
+        DataCategoryFilterRunningConfig,
     ]
 ):
     """Full configuration for the DataCategoryFilter node."""
@@ -128,24 +127,24 @@ class DataCategoryFilter(
     The column assignment is determined once during :meth:`fit` by reading
     ``ctx.categories`` and is reused on every subsequent :meth:`transform`
     call.  :class:`~nodeml.core.common.data.data.MixedData` columns are not
-    routed to either output.
+    routed to either output.  Each output keeps the input column order.
 
-    Parameters
-    ----------
-    config:
-        Node configuration.  :class:`DataCategoryFilterConfig` is the
-        expected type; its defaults require no arguments.
+    Example:
+        >>> node = DataCategoryFilter(config=DataCategoryFilterConfig())
+        >>> node.node_fit_transform({"input": (df, ctx)})
+        {"categorical": (df_cat, ctx_cat), "numerical": (df_num, ctx_num)}
 
-    Example
-    -------
-    >>> node = DataCategoryFilter(config=DataCategoryFilterConfig())
-    >>> node.node_fit_transform({"input": (df, ctx)})
-    {"categorical": (df_cat, ctx_cat), "numerical": (df_num, ctx_num)}
     """
 
     metadata = DataCategoryFilterMetadata()
 
     def __init__(self, *, config: DataCategoryFilterConfig) -> None:
+        """Initialise the node with its configuration.
+
+        Args:
+            config: The configuration of the node.
+
+        """
         self._config = config
         self._params: _DataCategoryFilterParams = {
             "categorical": [],
@@ -156,17 +155,14 @@ class DataCategoryFilter(
 
     # --- TransformNode interface ------------------------------------------
 
-    def fit(
-        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
-    ) -> None:
+    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
         """Identify categorical and numerical columns from the input context.
 
-        Parameters
-        ----------
-        data:
-            Must contain key ``"input"``.  Only the
-            :class:`~nodeml.core.common.data.data.TabularDataContext` is
-            read; the DataFrame values are not inspected.
+        Args:
+            data: Must contain the key ``"input"``.  Only the
+                :class:`~nodeml.core.common.data.data.TabularDataContext` is
+                read; the DataFrame values are not inspected.
+
         """
         _, ctx = data["input"]
         self._params = {
@@ -187,42 +183,46 @@ class DataCategoryFilter(
     ) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
         """Route columns to the ``categorical`` and ``numerical`` output ports.
 
-        Parameters
-        ----------
-        data:
-            Must contain key ``"input"``.
+        Args:
+            data: Must contain the key ``"input"``.
 
-        Returns
-        -------
-        dict
-            Always contains both ``"categorical"`` and ``"numerical"`` keys.
-            Either DataFrame may have zero columns if no matching columns
-            were found during :meth:`fit`.
+        Returns:
+            Always both ``"categorical"`` and ``"numerical"`` keys.  Either
+            DataFrame can have zero columns if :meth:`fit` found no matching
+            column.
+
+        Raises:
+            NodeInputError: If the input does not have a fitted column.
+
         """
         df, ctx = data["input"]
+        check_fitted_columns(
+            [*self._params["categorical"], *self._params["numerical"]],
+            df.columns,
+            node_name="DataCategoryFilter",
+            allow_extra=True,
+        )
         return {
             "categorical": self._select(df, ctx, self._params["categorical"]),
-            "numerical":   self._select(df, ctx, self._params["numerical"]),
+            "numerical": self._select(df, ctx, self._params["numerical"]),
         }
 
     def get_params(self) -> _DataCategoryFilterParams:
         """Return the column assignment learned during fit.
 
-        Returns
-        -------
-        dict
-            ``{"categorical": [...], "numerical": [...]}``
+        Returns:
+            ``{"categorical": [...], "numerical": [...]}``.
+
         """
         return self._params
 
     def set_params(self, params: _DataCategoryFilterParams) -> None:
         """Restore a previously fitted column assignment (checkpointing).
 
-        Parameters
-        ----------
-        params:
-            Dict with keys ``"categorical"`` and ``"numerical"``, each
-            mapping to a list of column names.
+        Args:
+            params: Dict with keys ``"categorical"`` and ``"numerical"``,
+                each mapping to a list of column names.
+
         """
         self._params = params
         self._fitted = True
@@ -235,21 +235,7 @@ class DataCategoryFilter(
         ctx: TabularDataContext,
         columns: list[str],
     ) -> tuple[pd.DataFrame, TabularDataContext]:
-        """Slice *df* and *ctx* to the requested *columns*."""
+        """Keep the *columns* of *df* and *ctx*, in the input order."""
         keep = set(columns)
-        return (
-            cast("pd.DataFrame", df[columns]),
-            TabularDataContext(
-                columns=[c for c in ctx.columns if c in keep],
-                dtypes=[
-                    d
-                    for c, d in zip(ctx.columns, ctx.dtypes, strict=True)
-                    if c in keep
-                ],
-                categories=[
-                    cat
-                    for c, cat in zip(ctx.columns, ctx.categories, strict=True)
-                    if c in keep
-                ],
-            ),
-        )
+        ordered = [col for col in df.columns if col in keep]
+        return df[ordered], ctx.select(ordered)

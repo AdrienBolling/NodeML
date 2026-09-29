@@ -1,33 +1,42 @@
 """Robust scaler transform node for the NodeML Framework.
 
-Scales numerical columns using median and interquartile range (IQR),
-making the transformation robust to outliers::
+Scales numerical columns with the median and the interquartile range
+(IQR), so that outliers have a small effect on the transformation::
 
     x_scaled = (x - median) / IQR
 
-where IQR = Q3 - Q1.
+where IQR = Q3 - Q1.  The scaler learns the **median** and the **IQR** of
+each column during :meth:`fit` and uses them again at :meth:`transform`
+time.  A column with a zero IQR is only centred on its median.  See
+:mod:`._affine_scaler` for the shared behaviour.
 """
 
 import pandas as pd
 from pydantic import Field
 
 from nodeml.core.common.data.data import (
-    ArrayLikeEnum, DataCategoryEnum, DataStructureEnum, TabularDataContext,
+    ArrayLikeEnum,
+    DataCategoryEnum,
+    DataStructureEnum,
 )
 from nodeml.core.nodes.node import Port
 from nodeml.core.nodes.transform.transform import (
-    TransformConfig, TransformHyperParameters, TransformMetadata,
-    TransformNode, TransformRunningConfig,
+    TransformConfig,
+    TransformHyperParameters,
+    TransformMetadata,
+    TransformRunningConfig,
 )
 
-type _RobustScalerParams = dict[str, dict[str, float]]
+from ._affine_scaler import AffineScaler, ScalerParams
 
 
 class RobustScalerMetadata(TransformMetadata):
     """Metadata for the RobustScaler node."""
 
     node_name: str = "RobustScaler"
-    description: str = "Scale numerical columns using median and IQR, robust to outliers."
+    description: str = (
+        "Scale numerical columns using median and IQR, robust to outliers."
+    )
     trainable: bool = True
 
 
@@ -39,70 +48,70 @@ class RobustScalerHyperParameters(TransformHyperParameters):
     """No tuneable hyperparameters."""
 
 
-class RobustScalerConfig(TransformConfig[RobustScalerRunningConfig, RobustScalerHyperParameters]):
+class RobustScalerConfig(
+    TransformConfig[RobustScalerHyperParameters, RobustScalerRunningConfig]
+):
     """Configuration for the RobustScaler node."""
 
-    hyperparameters: RobustScalerHyperParameters = Field(default_factory=RobustScalerHyperParameters)
-    running_config: RobustScalerRunningConfig = Field(default_factory=RobustScalerRunningConfig)
+    hyperparameters: RobustScalerHyperParameters = Field(
+        default_factory=RobustScalerHyperParameters
+    )
+    running_config: RobustScalerRunningConfig = Field(
+        default_factory=RobustScalerRunningConfig
+    )
     in_ports: dict[str, Port] = Field(
-        default={"input": Port(arr_type=ArrayLikeEnum.PANDAS, data_structure=DataStructureEnum.TABULAR, data_category=DataCategoryEnum.NUMERICAL, data_shape="batch feature", desc="Numerical DataFrame to scale.")},
+        default={
+            "input": Port(
+                arr_type=ArrayLikeEnum.PANDAS,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.NUMERICAL,
+                data_shape="batch feature",
+                desc="Numerical DataFrame to scale.",
+            )
+        },
     )
     out_ports: dict[str, Port] = Field(
-        default={"output": Port(arr_type=ArrayLikeEnum.PANDAS, data_structure=DataStructureEnum.TABULAR, data_category=DataCategoryEnum.NUMERICAL, data_shape="batch feature", desc="Robust-scaled numerical DataFrame.")},
+        default={
+            "output": Port(
+                arr_type=ArrayLikeEnum.PANDAS,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.NUMERICAL,
+                data_shape="batch feature",
+                desc="Robust-scaled numerical DataFrame.",
+            )
+        },
     )
 
 
-class RobustScaler(TransformNode[pd.DataFrame, TabularDataContext, pd.DataFrame, TabularDataContext, _RobustScalerParams]):
-    """Scale numerical columns using median and IQR, robust to outliers."""
+class RobustScaler(AffineScaler):
+    """Scale numerical columns with the median and the IQR, robust to outliers.
+
+    Example:
+        >>> node = RobustScaler(config=RobustScalerConfig())
+        >>> out = node.node_fit_transform({"input": (df, ctx)})
+
+    """
 
     metadata = RobustScalerMetadata()
 
-    def __init__(self, *, config: RobustScalerConfig) -> None:
-        self._config = config
-        self._params: _RobustScalerParams = {"median": {}, "iqr": {}}
-        self._fitted = False
+    @staticmethod
+    def _empty_params() -> ScalerParams:
+        """Return the params of a scaler that is not fitted."""
+        return {"median": {}, "iqr": {}}
 
-    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
-        """Learn per-column median and IQR from the input data.
-
-        Args:
-            data: Dictionary mapping port names to (DataFrame, context) tuples.
-        """
-        df, _ = data["input"]
+    @staticmethod
+    def _fit_statistics(df: pd.DataFrame) -> ScalerParams:
+        """Return the median and the IQR of each column of *df*."""
         medians = df.median()
-        q1 = df.quantile(0.25)
-        q3 = df.quantile(0.75)
-        iqrs = q3 - q1
-        self._params = {
+        iqrs = df.quantile(0.75) - df.quantile(0.25)
+        return {
             "median": {col: float(medians[col]) for col in df.columns},
             "iqr": {col: float(iqrs[col]) for col in df.columns},
         }
 
-    def transform(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
-        """Apply robust scaling to the input data.
-
-        Args:
-            data: Dictionary mapping port names to (DataFrame, context) tuples.
-
-        Returns:
-            Dictionary mapping port names to (scaled DataFrame, context) tuples.
-        """
-        df, ctx = data["input"]
-        median = pd.Series(self._params["median"])
-        iqr = pd.Series(self._params["iqr"])
-        iqr = iqr.replace(0.0, 1.0)
-        result = df.sub(median, axis=1).div(iqr, axis=1)
-        return {"output": (result, ctx)}
-
-    def get_params(self) -> _RobustScalerParams:
-        """Return the learned median and IQR parameters."""
-        return self._params
-
-    def set_params(self, params: _RobustScalerParams) -> None:
-        """Set the median and IQR parameters.
-
-        Args:
-            params: Dictionary with 'median' and 'iqr' keys mapping column names to values.
-        """
-        self._params = params
-        self._fitted = True
+    def _center_and_scale(self) -> tuple[pd.Series, pd.Series]:
+        """Return the median as the center and the IQR as the scale."""
+        return (
+            pd.Series(self._params["median"], dtype="float64"),
+            pd.Series(self._params["iqr"], dtype="float64"),
+        )

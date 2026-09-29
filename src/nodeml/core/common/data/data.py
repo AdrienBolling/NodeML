@@ -1,5 +1,6 @@
 """Module for the base types of data in the NodeML Framework."""
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -7,6 +8,14 @@ import jaxtyping
 import numpy as np
 import pandas as pd
 import torch
+from pandas.api.types import (
+    is_numeric_dtype,
+    is_object_dtype,
+    is_string_dtype,
+    pandas_dtype,
+)
+
+from nodeml.core.common.exceptions import DataContextError
 
 
 class Data:
@@ -15,12 +24,14 @@ class Data:
     @property
     def shape(self) -> tuple[int, ...]:
         """Return the shape of the data."""
-        raise NotImplementedError("Subclasses must implement the shape property.")
+        msg = "Subclasses must implement the shape property."
+        raise NotImplementedError(msg)
 
     @property
     def dtype(self) -> str:
         """Return the dtype of the data."""
-        raise NotImplementedError("Subclasses must implement the dtype property.")
+        msg = "Subclasses must implement the dtype property."
+        raise NotImplementedError(msg)
 
 
 @dataclass
@@ -104,17 +115,73 @@ INVERSE_DATA_CATEGORY_MAPPING: dict[type[DataCategory], DataCategoryEnum] = {
 }
 
 
+def infer_category(dtype: object) -> type[DataCategory]:
+    """Infer the data category of a column from its dtype.
+
+    Numeric and boolean dtypes are numerical.  Categorical, object and
+    string dtypes are categorical.  Any other dtype (for example a datetime)
+    is mixed, which is the most permissive category.
+
+    Args:
+        dtype: A numpy or pandas dtype.
+
+    Returns:
+        The inferred category type.
+
+    """
+    if is_numeric_dtype(dtype):
+        return NumericalData
+    if (
+        isinstance(dtype, pd.CategoricalDtype)
+        or is_object_dtype(dtype)
+        or is_string_dtype(dtype)
+    ):
+        return CategoricalData
+    return MixedData
+
+
+def _check_column_names(expected: Iterable[object], actual: Iterable[object]) -> None:
+    """Raise if the context names *expected* differ from the data names *actual*."""
+    expected_names = [str(col) for col in expected]
+    actual_names = [str(col) for col in actual]
+    if expected_names != actual_names:
+        msg = (
+            "The context does not match the data columns. "
+            f"Context columns: {expected_names}. Data columns: {actual_names}. "
+            "Build the output context with TabularDataContext.select() "
+            "or TabularDataContext.aligned_to()."
+        )
+        raise DataContextError(msg)
+
+
 @dataclass
 class TabularDataContext(DataContext):
-    """(column names, dtypes, categories), this is the context of the data which is passed along the nodes."""
+    """Column names, dtypes and data categories of a tabular batch.
 
-    columns: list[
-        str
-    ]  # We use a default factory to avoid mutable default arguments issues with dataclasses
-    dtypes: list[
-        np.dtype
-    ]  # We use a default factory to avoid mutable default arguments issues with dataclasses
+    The three lists are aligned by position: entry ``i`` of each list
+    describes column ``i`` of the data.  A node that changes the columns of
+    its data must return a context with the same columns in the same order.
+    Use :meth:`select` or :meth:`aligned_to` to build such a context by
+    column name, so that the lists cannot drift from the data.
+
+    Raises:
+        DataContextError: If the three lists do not have the same length.
+
+    """
+
+    columns: list[str]
+    dtypes: list[np.dtype]
     categories: list[type[DataCategory]]
+
+    def __post_init__(self) -> None:
+        """Check that the three lists describe the same number of columns."""
+        if not (len(self.columns) == len(self.dtypes) == len(self.categories)):
+            msg = (
+                "TabularDataContext lists must have the same length, but got "
+                f"{len(self.columns)} columns, {len(self.dtypes)} dtypes and "
+                f"{len(self.categories)} categories."
+            )
+            raise DataContextError(msg)
 
     @property
     def dump_dict(self) -> dict[str, list[str]]:
@@ -133,6 +200,76 @@ class TabularDataContext(DataContext):
     def dump_tuple(self) -> tuple[list[str], list[np.dtype], list[type[DataCategory]]]:
         """Dump the TabularDataContext to a tuple for serialization."""
         return (self.columns, self.dtypes, self.categories)
+
+    def copy(self) -> "TabularDataContext":
+        """Return a copy of the context with new lists."""
+        return TabularDataContext(
+            columns=list(self.columns),
+            dtypes=list(self.dtypes),
+            categories=list(self.categories),
+        )
+
+    def select(self, columns: Sequence[str]) -> "TabularDataContext":
+        """Return a new context with only *columns*, in the given order.
+
+        Args:
+            columns: Names of the columns to keep.  The order of this
+                sequence is the order of the new context.
+
+        Returns:
+            A new :class:`TabularDataContext`.
+
+        Raises:
+            DataContextError: If a name is not in the context.
+
+        """
+        positions = {name: i for i, name in enumerate(self.columns)}
+        missing = [name for name in columns if name not in positions]
+        if missing:
+            msg = f"Columns {missing} are not in the context. Known columns: {self.columns}."
+            raise DataContextError(msg)
+        index = [positions[name] for name in columns]
+        return TabularDataContext(
+            columns=[self.columns[i] for i in index],
+            dtypes=[self.dtypes[i] for i in index],
+            categories=[self.categories[i] for i in index],
+        )
+
+    def aligned_to(self, df: pd.DataFrame) -> "TabularDataContext":
+        """Return a context that describes *df* exactly.
+
+        The new context has the columns of *df* in the order of *df*, and
+        the dtypes of *df*.  The category of each column comes from this
+        context when the column name is known, and is inferred from the
+        dtype for a new column.
+
+        Args:
+            df: The DataFrame that the new context must describe.
+
+        Returns:
+            A new :class:`TabularDataContext`.
+
+        """
+        known = dict(zip(self.columns, self.categories, strict=True))
+        columns = [str(col) for col in df.columns]
+        dtypes = list(df.dtypes)
+        categories = [
+            known.get(col, infer_category(dtype))
+            for col, dtype in zip(columns, dtypes, strict=True)
+        ]
+        return TabularDataContext(columns=columns, dtypes=dtypes, categories=categories)
+
+    def check_columns(self, columns: Iterable[object]) -> None:
+        """Check that the context lists exactly *columns*, in the same order.
+
+        Args:
+            columns: The column labels of the data that the context describes.
+
+        Raises:
+            DataContextError: If the names or their order differ.
+
+        """
+        _check_column_names(self.columns, columns)
 
     def remove_columns(self, columns_to_remove: list[str]) -> None:
         """Remove columns (and their dtypes/categories) from the context.
@@ -174,7 +311,8 @@ def tabular_context_from_dict_dump(
     """
     return TabularDataContext(
         columns=dump_dict["columns"],
-        dtypes=[np.dtype(dtype_str) for dtype_str in dump_dict["dtypes"]],
+        # pandas_dtype also accepts pandas extension dtypes such as "category".
+        dtypes=[pandas_dtype(dtype_str) for dtype_str in dump_dict["dtypes"]],
         categories=[
             DATA_CATEGORY_MAPPING[DataCategoryEnum(cat_str)]
             for cat_str in dump_dict["categories"]
@@ -198,7 +336,7 @@ class TabularData(Data):
     Any data is considered a batch, at worst a batch of 1 or 0 samples. This will make it easier to reshape and convert in the long run.
 
     Since in the background the data is a pandas dataframe, there is also the matter of colum names and dtypes. In cases where the target conversion type does not natively handle these, a tuple will be returned as follows :
-    (data_array, column_names, dtypes). It is up to the user to preserve the order of columns, and pass them along as needed (which should be quite easy, since the Shuffling transform node should be the only one modifying order).
+    (data_array, column_names, dtypes). It is up to the user to preserve the order of columns, and pass them along as needed (the ColumnOrder transform node is the node that changes the column order).
     Finally, we explictely attach the category of each feature, this is gonna be useful because pandas tends to implicitely convert data types as it sees fit, and some model are not supposed to ingest categorical or numerical data.
     """
 
@@ -207,8 +345,8 @@ class TabularData(Data):
     def __init__(
         self,
         data: ArrayLike,
-        columns: list[str],
-        dtypes: list[np.dtype],
+        columns: list[str] | None,
+        dtypes: list[np.dtype] | None,
         categories: list[type[DataCategory]] | None = None,
         *,
         infer_categories: bool = True,
@@ -217,33 +355,40 @@ class TabularData(Data):
 
         Args:
             data: The raw data as a pandas DataFrame, NumPy array, or torch Tensor.
-            columns: Column names corresponding to the feature axis.
-            dtypes: Expected NumPy dtypes for each column.
+            columns: Column names corresponding to the feature axis.  For a
+                DataFrame, the names must equal the DataFrame columns, in the
+                same order; ``None`` skips this check.
+            dtypes: Expected dtypes for each column.  A DataFrame keeps its
+                own dtypes, so this argument is ignored for a DataFrame.
             categories: Per-column data category types. Required for NumPy/Tensor
-                inputs unless *infer_categories* is ``True``.
+                inputs.  For a DataFrame, ``None`` infers them from the dtypes
+                when *infer_categories* is ``True``.
             infer_categories: If ``True`` and *categories* is ``None``, infer
-                categories from *dtypes* when *data* is a DataFrame.
+                categories from the dtypes when *data* is a DataFrame.
                 Defaults to ``True``.
 
         Raises:
             ValueError: If *data* is an unsupported type or if *categories* is
                 missing for non-DataFrame inputs.
+            DataContextError: If *columns* does not match the DataFrame columns.
 
         """
         self._infer_categories = infer_categories
         if isinstance(data, pd.DataFrame):
+            if columns is not None:
+                _check_column_names(columns, data.columns)
             # from_pandas may infer categories, so validate *after* conversion.
             self.from_pandas(data, categories)
-        elif categories is None:
-            raise ValueError(
-                "Categories must be provided for numpy and torch data, or infer_categories must be set to True to infer categories from dtypes."
-            )
+        elif categories is None or columns is None or dtypes is None:
+            msg = "Categories must be provided for numpy and torch data, together with columns and dtypes."
+            raise ValueError(msg)
         elif isinstance(data, np.ndarray):
             self.from_numpy(data, columns, dtypes, categories)
         elif isinstance(data, torch.Tensor):
             self.from_tensor(data, columns, dtypes, categories)
         else:
-            raise ValueError(f"Unsupported data type: {type(data)}")
+            msg = f"Unsupported data type: {type(data)}"
+            raise ValueError(msg)
 
     # --- Convenience API ---
     @property
@@ -279,7 +424,8 @@ class TabularData(Data):
     def dtype(self) -> str:
         """Return "mixed_data" if the data has mixed categories, otherwise return the category of the data."""
         if self._categories is None:
-            raise ValueError("Data is not initialized yet.")
+            msg = "Data is not initialized yet."
+            raise ValueError(msg)
         if all(cat == self._categories[0] for cat in self._categories):
             return str(INVERSE_DATA_CATEGORY_MAPPING[self._categories[0]])
         return str(DataCategoryEnum.MIXED)
@@ -298,7 +444,8 @@ class TabularData(Data):
     def categories(self) -> list[type[DataCategory]]:
         """Return the categories of the data."""
         if self._categories is None:
-            raise ValueError("Data is not initialized yet.")
+            msg = "Data is not initialized yet."
+            raise ValueError(msg)
         return self._categories
 
     @property
@@ -308,7 +455,8 @@ class TabularData(Data):
         This is an aggregate, if all features are of the same category, return that category, otherwise return mixed.
         """
         if self._categories is None:
-            raise ValueError("Data is not initialized yet.")
+            msg = "Data is not initialized yet."
+            raise ValueError(msg)
         if all(cat == self._categories[0] for cat in self._categories):
             return self._categories[0]
         return MixedData
@@ -341,28 +489,27 @@ class TabularData(Data):
         """
         # Check that the data is 2D, has column names, and that the dtypes can be inferred.
         if data is not None and data.ndim != self._TABULAR_NDIM:
-            raise ValueError(
-                f"Data must be {self._TABULAR_NDIM}D, but got {data.ndim}D."
-            )
+            msg = f"Data must be {self._TABULAR_NDIM}D, but got {data.ndim}D."
+            raise ValueError(msg)
         if columns is None:
-            raise ValueError("Columns must be provided.")
+            msg = "Columns must be provided."
+            raise ValueError(msg)
         if dtypes is None:
-            raise ValueError("Dtypes must be provided.")
+            msg = "Dtypes must be provided."
+            raise ValueError(msg)
         if categories is None:
-            raise ValueError("Categories must be provided.")
+            msg = "Categories must be provided."
+            raise ValueError(msg)
         if data is not None:
             if len(columns) != data.shape[1]:
-                raise ValueError(
-                    f"Number of columns must match data shape, but got {len(columns)} columns and data with shape {data.shape}."
-                )
+                msg = f"Number of columns must match data shape, but got {len(columns)} columns and data with shape {data.shape}."
+                raise ValueError(msg)
             if len(dtypes) != data.shape[1]:
-                raise ValueError(
-                    f"Number of dtypes must match data shape, but got {len(dtypes)} dtypes and data with shape {data.shape}."
-                )
+                msg = f"Number of dtypes must match data shape, but got {len(dtypes)} dtypes and data with shape {data.shape}."
+                raise ValueError(msg)
             if len(categories) != data.shape[1]:
-                raise ValueError(
-                    f"Number of categories must match data shape, but got {len(categories)} categories and data with shape {data.shape}."
-                )
+                msg = f"Number of categories must match data shape, but got {len(categories)} categories and data with shape {data.shape}."
+                raise ValueError(msg)
         return True
 
     # --- Conversion FROM methods ---
@@ -389,22 +536,14 @@ class TabularData(Data):
         dtypes = data.dtypes.tolist()
 
         if categories is None and self._infer_categories:
-            # Infer categories from dtypes, this is a bit hacky but it should work for most cases. We can always allow the user to explicitly pass the categories if they want to be more precise.
-            inferred_categories = []
-            for dtype in dtypes:
-                if pd.api.types.is_numeric_dtype(dtype):
-                    inferred_categories.append(NumericalData)
-                elif isinstance(
-                    dtype, pd.CategoricalDtype
-                ) or pd.api.types.is_object_dtype(dtype):
-                    inferred_categories.append(CategoricalData)
-                else:
-                    inferred_categories.append(
-                        MixedData
-                    )  # If we can't infer, we consider it mixed, which is the most permissive category.
-            categories = inferred_categories
+            # Explicit categories are more precise; inference is the fallback.
+            categories = [infer_category(dtype) for dtype in dtypes]
         if categories is not None and len(categories) != len(columns):
-            raise ValueError("Length of categories must match number of columns.")
+            msg = (
+                f"Length of categories ({len(categories)}) must match number "
+                f"of columns ({len(columns)}): {columns}."
+            )
+            raise DataContextError(msg)
 
         self._validate_data(data, columns, dtypes, categories)
 
@@ -481,11 +620,13 @@ class TabularData(Data):
 
         """
         if not self.is_initialized:
-            raise ValueError("Data is not initialized yet.")
+            msg = "Data is not initialized yet."
+            raise ValueError(msg)
         if (
             self._categories is None
         ):  # Typechecker stuff, could be removed without issues (tbi, do we really lose performance)
-            raise ValueError("Data is not initialized yet.")
+            msg = "Data is not initialized yet."
+            raise ValueError(msg)
         return (
             self._data,
             TabularDataContext(self._columns, self._dtypes, self._categories),
@@ -503,13 +644,15 @@ class TabularData(Data):
 
         """
         if not self.is_initialized:
-            raise ValueError("Data is not initialized yet.")
+            msg = "Data is not initialized yet."
+            raise ValueError(msg)
         if (
             self._categories is None
         ):  # Typechecker stuff, could be removed without issues
-            raise ValueError("Data is not initialized yet.")
+            msg = "Data is not initialized yet."
+            raise ValueError(msg)
         return (
-            self._data.values,
+            self._data.to_numpy(),
             TabularDataContext(self._columns, self._dtypes, self._categories),
         )
 
@@ -525,13 +668,15 @@ class TabularData(Data):
 
         """
         if not self.is_initialized:
-            raise ValueError("Data is not initialized yet.")
+            msg = "Data is not initialized yet."
+            raise ValueError(msg)
         if (
             self._categories is None
         ):  # Typechecker stuff, could be removed without issues
-            raise ValueError("Data is not initialized yet.")
+            msg = "Data is not initialized yet."
+            raise ValueError(msg)
         return (
-            torch.from_numpy(self._data.values),
+            torch.from_numpy(self._data.to_numpy()),
             TabularDataContext(self._columns, self._dtypes, self._categories),
         )
 
@@ -554,9 +699,9 @@ class TabularData(Data):
                 names=["column", "dtype", "category"],
             ),
         )  # Display the DataFrame as HTML for better formatting in Jupyter notebooks
-        return f"{self.__class__.__name__}\n{df.__str__()}(\nShape: {self.shape})"
+        return f"{self.__class__.__name__} (Shape: {self.shape})\n{df}"
 
-    def _repr_html_(self):
+    def _repr_html_(self) -> str:
         """Represent the TabularData as a pandas array with multi-index columns for column names, dtypes, and categories, in HTML format for better display in Jupyter notebooks."""
         col_names = [str(col) for col in self._columns]
         dtype_names = [str(dt) for dt in self._dtypes]
@@ -575,7 +720,7 @@ class TabularData(Data):
             ),
         )
         html = f"<h3>{self.__class__.__name__} (Shape: {self.shape})</h3>"
-        html += df._repr_html_()  # type: ignore
+        html += df._repr_html_()  # type: ignore[operator]
         return html
 
 

@@ -1,21 +1,25 @@
 """One-Hot Encoding transform node for the NodeML Framework.
 
 Takes categorical columns and returns them as one-hot-encoded numerical
-columns.  During :meth:`fit` the node discovers the unique categories for
-every column.  During :meth:`transform` it applies the same mapping, silently
-ignoring categories that were not seen at fit time (they produce all-zero
-rows for their original column's dummies).
+columns.  During :meth:`fit` the node finds the sorted distinct categories
+of each column.  During :meth:`transform` it applies the same mapping.  A
+missing value, or a category that fit did not see, gives zeros in all the
+dummy columns of its column.
 
-The fitted category mapping is persisted via :meth:`get_params` /
-:meth:`set_params` for checkpointing.
+The node compares real values, not strings: ``1.0`` and ``1`` are the same
+category, and its dummy column is ``<column>_1``.  Numbers are sorted by
+value.  See :mod:`._categories`.
+
+:meth:`get_params` / :meth:`set_params` save and restore the categories.
 """
 
-from typing import Any
+from collections.abc import Hashable
 
 import numpy as np
 import pandas as pd
 from pydantic import Field
 
+from nodeml.components.utils.dataframe import check_fitted_columns
 from nodeml.core.common.data.data import (
     ArrayLikeEnum,
     DataCategoryEnum,
@@ -23,6 +27,7 @@ from nodeml.core.common.data.data import (
     NumericalData,
     TabularDataContext,
 )
+from nodeml.core.common.exceptions import NodeInputError
 from nodeml.core.nodes.node import Port
 from nodeml.core.nodes.transform.transform import (
     TransformConfig,
@@ -32,8 +37,10 @@ from nodeml.core.nodes.transform.transform import (
     TransformRunningConfig,
 )
 
+from ._categories import encode_codes, learn_categories
+
 # Serialisable params: column name -> sorted list of categories seen at fit.
-type _OneHotParams = dict[str, list[str]]
+type _OneHotParams = dict[str, list[Hashable]]
 
 
 class OneHotEncodingMetadata(TransformMetadata):
@@ -56,8 +63,8 @@ class OneHotEncodingHyperParameters(TransformHyperParameters):
 
 class OneHotEncodingConfig(
     TransformConfig[
-        OneHotEncodingRunningConfig,
         OneHotEncodingHyperParameters,
+        OneHotEncodingRunningConfig,
     ],
 ):
     """Full configuration for the OneHotEncoding node."""
@@ -107,72 +114,107 @@ class OneHotEncoding(
 ):
     """One-hot encode categorical columns into numerical dummies.
 
-    During :meth:`fit` the unique categories per column are captured.
-    :meth:`transform` applies the same encoding deterministically, producing
-    columns named ``<original_col>_<category>``.
+    During :meth:`fit`, the node captures the sorted categories of each
+    column.  :meth:`transform` applies the same encoding.  It makes one
+    ``uint8`` column ``<original_col>_<category>`` per category.  The output
+    keeps the input index, and follows the input column order.
 
-    Example
-    -------
-    >>> node = OneHotEncoding(config=OneHotEncodingConfig())
-    >>> out = node.node_fit_transform({"input": (df_cat, ctx_cat)})
-    >>> encoded_df, encoded_ctx = out["output"]
+    Example:
+        >>> node = OneHotEncoding(config=OneHotEncodingConfig())
+        >>> out = node.node_fit_transform({"input": (df_cat, ctx_cat)})
+        >>> encoded_df, encoded_ctx = out["output"]
+
     """
 
     metadata = OneHotEncodingMetadata()
 
     def __init__(self, *, config: OneHotEncodingConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         self._params: _OneHotParams = {}
         self._fitted = False
 
     # --- TransformNode interface ------------------------------------------
 
-    def fit(
-        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
-    ) -> None:
-        """Learn unique categories for every column."""
+    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
+        """Learn the sorted categories of each column of ``data["input"]``.
+
+        Args:
+            data: Must contain the key ``"input"``.
+
+        Raises:
+            NodeInputError: If two dummy columns get the same name (for
+                example, the string ``"1"`` and the integer ``1``).
+
+        """
         df, _ = data["input"]
-        self._params = {
-            col: sorted(df[col].dropna().unique().astype(str).tolist())
-            for col in df.columns
-        }
+        params = {col: learn_categories(df[col]) for col in df.columns}
+        names = [
+            name
+            for col, categories in params.items()
+            for name in _dummy_names(col, categories)
+        ]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            msg = (
+                f"OneHotEncoding: the dummy column names {duplicates} are not unique. "
+                "Rename the columns or the categories before the encoding."
+            )
+            raise NodeInputError(msg)
+        self._params = params
 
     def transform(
         self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
     ) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
-        """Apply one-hot encoding using the categories learned at fit time."""
+        """Encode each column with the categories learned during fit.
+
+        Args:
+            data: Must contain the key ``"input"``.
+
+        Returns:
+            ``{"output": (df, ctx)}`` with the ``uint8`` dummy columns.
+
+        Raises:
+            NodeInputError: If the input columns are not the fitted columns.
+
+        """
         df, _ = data["input"]
-
-        encoded_frames: list[pd.DataFrame] = []
-        encoded_columns: list[str] = []
+        check_fitted_columns(self._params, df.columns, node_name="OneHotEncoding")
+        dummies: dict[str, np.ndarray] = {}
         for col in df.columns:
-            categories = self._params.get(col, [])
-            dummies = pd.DataFrame(
-                0,
-                index=df.index,
-                columns=[f"{col}_{cat}" for cat in categories],
-                dtype=np.uint8,
-            )
-            for cat in categories:
-                mask = df[col].astype(str) == cat
-                dummies.loc[mask, f"{col}_{cat}"] = 1
-            encoded_frames.append(dummies)
-            encoded_columns.extend(dummies.columns.tolist())
-
-        result = pd.concat(encoded_frames, axis=1) if encoded_frames else pd.DataFrame()
-
+            categories = self._params[col]
+            codes = encode_codes(df[col], categories)
+            one_hot = codes[:, None] == np.arange(len(categories))[None, :]
+            for position, name in enumerate(_dummy_names(col, categories)):
+                dummies[name] = one_hot[:, position].astype(np.uint8)
+        result = pd.DataFrame(dummies, index=df.index, columns=list(dummies))
         ctx = TabularDataContext(
-            columns=encoded_columns,
-            dtypes=[np.dtype("uint8")] * len(encoded_columns),
-            categories=[NumericalData] * len(encoded_columns),
+            columns=list(result.columns),
+            dtypes=[np.dtype("uint8")] * result.shape[1],
+            categories=[NumericalData] * result.shape[1],
         )
         return {"output": (result, ctx)}
 
     def get_params(self) -> _OneHotParams:
-        """Return the per-column category mapping learned during fit."""
+        """Return the categories learned during fit.
+
+        Returns:
+            A mapping of column name to its sorted categories.
+
+        """
         return self._params
 
     def set_params(self, params: _OneHotParams) -> None:
-        """Restore a previously fitted category mapping."""
+        """Restore the categories returned by :meth:`get_params`.
+
+        Args:
+            params: The params of a fitted OneHotEncoding node.
+
+        """
         self._params = params
         self._fitted = True
+
+
+def _dummy_names(col: object, categories: list[Hashable]) -> list[str]:
+    """Return the dummy column names of *col*, one per category."""
+    return [f"{col}_{category}" for category in categories]

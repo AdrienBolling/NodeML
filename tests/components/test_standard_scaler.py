@@ -9,8 +9,7 @@ from nodeml.components.nodes.transforms.scalers.standard_scaler import (
     StandardScaler,
     StandardScalerConfig,
 )
-
-from tests.shims.tabular import numerical_pair
+from tests.shims.tabular import numerical_context, numerical_pair
 
 
 class TestStandardScaler:
@@ -43,10 +42,6 @@ class TestStandardScaler:
                 "var": np.arange(5, dtype=np.float64),
             }
         )
-        ctx = numerical_pair(n_rows=5, n_cols=2)[1]
-        # Replace the shim context with one that matches the custom frame.
-        from tests.shims.tabular import numerical_context
-
         ctx = numerical_context(df)
 
         node = StandardScaler(config=StandardScalerConfig())

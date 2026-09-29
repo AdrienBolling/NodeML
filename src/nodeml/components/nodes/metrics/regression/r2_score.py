@@ -4,12 +4,13 @@ Wraps ``torchmetrics.R2Score`` and exposes it as a NodeML
 :class:`~nodeml.core.nodes.metrics.metric_node.MetricNode`.  The node expects
 two input ports:
 
-* ``pred``   – predicted values ``(batch, targets)`` as a numpy array
-* ``target`` – ground-truth values ``(batch, targets)`` as a numpy array
+* ``pred``   - predicted values ``(batch, targets)`` as a numpy array
+* ``target`` - ground-truth values ``(batch, targets)`` as a numpy array
 
 and emits one output port:
 
-* ``score`` – scalar metric value ``(1, 1)`` as a numpy array
+* ``score`` - metric value ``(1, 1)`` as a numpy array, or one column per
+              output ``(1, targets)`` with ``multioutput='raw_values'``
 
 R² = 1 indicates a perfect fit; R² = 0 means the model predicts no better
 than the target mean.  Negative values are possible when the model is
@@ -18,23 +19,20 @@ arbitrarily worse than the mean predictor.
 
 from typing import Literal
 
-import numpy as np
-import torch
 from pydantic import Field
-from torchmetrics import R2Score
+from torchmetrics import Metric, R2Score
 
-from nodeml.core.common.data.data import (
-    ArrayLikeEnum,
-    DataCategoryEnum,
-    DataStructureEnum,
-    NumericalData,
-    TabularDataContext,
+from nodeml.components.nodes.metrics.base import (
+    TorchMetricRunningConfig,
+    score_out_ports,
+)
+from nodeml.components.nodes.metrics.regression.base import (
+    RegressionMetricNode,
+    regression_in_ports,
 )
 from nodeml.core.nodes.metrics.metric_node import (
-    MetricNode,
     MetricNodeConfig,
     MetricNodeMetadata,
-    MetricNodeRunningConfig,
 )
 from nodeml.core.nodes.node import Port
 
@@ -51,7 +49,7 @@ class R2ScoreMetadata(MetricNodeMetadata):
     )
 
 
-class R2ScoreRunningConfig(MetricNodeRunningConfig):
+class R2ScoreRunningConfig(TorchMetricRunningConfig):
     """Run-time options for the R2Score metric node."""
 
     adjusted: int = Field(
@@ -73,7 +71,8 @@ class R2ScoreRunningConfig(MetricNodeRunningConfig):
             "Strategy for aggregating across multiple outputs. "
             "``'uniform_average'`` averages scores equally. "
             "``'variance_weighted'`` weights by target variance. "
-            "``'raw_values'`` returns per-output scores (not reduced to scalar)."
+            "``'raw_values'`` returns one score per output "
+            "(columns ``r2_0``, ``r2_1``, ...)."
         ),
     )
 
@@ -86,94 +85,37 @@ class R2ScoreConfig(MetricNodeConfig[R2ScoreRunningConfig]):
         description="Run-time options (adjusted, multioutput).",
     )
     in_ports: dict[str, Port] = Field(
-        default={
-            "pred": Port(
-                arr_type=ArrayLikeEnum.NUMPY,
-                data_structure=DataStructureEnum.TABULAR,
-                data_category=DataCategoryEnum.NUMERICAL,
-                data_shape="batch targets",
-                desc="Predicted values (batch, targets).",
-            ),
-            "target": Port(
-                arr_type=ArrayLikeEnum.NUMPY,
-                data_structure=DataStructureEnum.TABULAR,
-                data_category=DataCategoryEnum.NUMERICAL,
-                data_shape="batch targets",
-                desc="Ground-truth target values (batch, targets).",
-            ),
-        },
+        default=regression_in_ports(),
         description="Input ports: 'pred' (predictions) and 'target' (ground truth).",
     )
     out_ports: dict[str, Port] = Field(
-        default={
-            "score": Port(
-                arr_type=ArrayLikeEnum.NUMPY,
-                data_structure=DataStructureEnum.TABULAR,
-                data_category=DataCategoryEnum.NUMERICAL,
-                data_shape="1 1",
-                desc="Scalar metric value.",
-            ),
-        },
-        description="Output ports: 'score' (scalar metric value).",
+        default=score_out_ports(
+            "Metric value (1, 1), or one value per output (1, targets) "
+            "with multioutput='raw_values'.",
+            per_output=True,
+        ),
+        description="Output ports: 'score' (metric value).",
     )
 
 
-class R2(
-    MetricNode[
-        np.ndarray,
-        TabularDataContext,
-        np.ndarray,
-        TabularDataContext,
-    ]
-):
+class R2(RegressionMetricNode):
     """R-squared metric node.
 
     Converts numpy inputs to torch tensors, delegates to
-    ``torchmetrics.R2Score``, and returns the scalar result as a
-    ``(1, 1)`` numpy array with a :class:`TabularDataContext`.
-
-    Note: torchmetrics ``R2Score`` expects 1-D input for single-output
-    regression.  This node squeezes the last dimension when
-    ``targets == 1`` before forwarding to the metric.
+    ``torchmetrics.R2Score``, and returns the result as one row
+    of float64 values: one column ``r2``, or one column per output
+    ``r2_0``, ``r2_1``, ... with ``multioutput='raw_values'``.
     """
 
     metadata = R2ScoreMetadata()
+    score_name = "r2"
 
-    def __init__(self, *, config: R2ScoreConfig) -> None:
-        self._config = config
-        rc = config.running_config
-        self._metric = R2Score(
-            adjusted=rc.adjusted,
-            multioutput=rc.multioutput,
-        )
+    def _build_metric(self) -> Metric:
+        """Build the torchmetrics metric.
 
-    # --- MetricNode interface ------------------------------------------------
+        Returns:
+            An ``R2Score`` metric.
 
-    def update(
-        self, data: dict[str, tuple[np.ndarray, TabularDataContext]]
-    ) -> None:
-        """Feed predictions and targets into the torchmetrics accumulator."""
-        pred, _ = data["pred"]
-        target, _ = data["target"]
-        pred_t = torch.from_numpy(pred).float()
-        target_t = torch.from_numpy(target).float()
-        # R2Score expects 1-D tensors for single-output regression.
-        if pred_t.shape[-1] == 1:
-            pred_t = pred_t.squeeze(-1)
-            target_t = target_t.squeeze(-1)
-        self._metric.update(pred_t, target_t)
-
-    def compute(self) -> dict[str, tuple[np.ndarray, TabularDataContext]]:
-        """Compute R² and return a ``(1, 1)`` result array."""
-        value = self._metric.compute().item()
-        self._metric.reset()
-        return {
-            "score": (
-                np.array([[value]], dtype=np.float64),
-                TabularDataContext(
-                    columns=["r2"],
-                    dtypes=[np.dtype("float64")],
-                    categories=[NumericalData],
-                ),
-            ),
-        }
+        """
+        rc = self._config.running_config
+        return R2Score(adjusted=rc.adjusted, multioutput=rc.multioutput)

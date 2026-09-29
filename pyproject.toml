@@ -71,15 +71,47 @@ ignore = [
   "D104",   # No public docstring in package
   "D203",   # Blank line before class docstring
   "D213",   # Multi-line docstring summary should start at the first line
-  "ANN401", # Missing type annotation for self in method
+  "ANN401", # Dynamically typed expressions (typing.Any) are allowed
   "F722",   # Syntax error in forward annotation (jaxtyping syntax)
   "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
   "SIM118", # use key in dict instead of key in dict.keys() -> there's a conflict when iterating over the keys of a dict
+  "N803",   # ML convention: argument names such as X are allowed
+  "N806",   # ML convention: variable names such as X are allowed
+  "TC001",  # Pydantic models need their annotation imports at runtime
+  "TC002",  # Pydantic models need their annotation imports at runtime
+  "TC003",  # Pydantic models need their annotation imports at runtime
 ]
+
+[tool.ruff.lint.pylint]
+max-args = 8
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["E402"]
-"tests/**/*.py" = ["S101", "ANN201", "NPY002", "PLR2004", "RUF043"]  # Allow asserts, no return type annotations, allow legacy numpy random, magic values, regex patterns
+"tests/**/*.py" = [
+  "S101",    # Allow asserts
+  "ANN001",  # Fixture arguments need no annotations
+  "ANN201",  # No return type annotations
+  "ARG002",  # Test doubles may ignore arguments
+  "D101",    # Test classes need no docstrings
+  "D102",    # Test methods need no docstrings
+  "D103",    # Test functions need no docstrings
+  "D107",    # Test doubles need no __init__ docstrings
+  "NPY002",  # Allow legacy numpy random
+  "PLC0415", # Allow local imports in tests
+  "PLR2004", # Allow magic values
+  "RUF043",  # Allow regex patterns in pytest.raises
+  "SLF001",  # Tests may inspect private members
+]
+"docs/conf.py" = ["INP001"]  # Sphinx config is not a package module
+"examples/**/*.ipynb" = [
+  "D",       # Notebook cells need no docstrings
+  "S101",    # Examples may assert results
+  "S108",    # Examples may write to /tmp
+  "ANN",     # Notebook code needs no annotations
+  "E402",    # Imports can come after markdown cells
+  "T201",    # Notebooks print results
+  "INP001",  # Notebooks are not in a package
+]
 
 [tool.basedpyright]
 reportAnyType = false

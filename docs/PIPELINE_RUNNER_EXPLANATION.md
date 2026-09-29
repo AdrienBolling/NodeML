@@ -1,158 +1,79 @@
-# PipelineRunner Explanation
+# How the SmartRunner executes a pipeline
 
-## Overview
+This document describes how `SmartRunner` runs a compiled `Pipeline`. The code is in `src/nodeml/core/pipeline/runners/smart_runner.py`.
 
-The `PipelineRunner` is a component responsible for orchestrating the execution of a pipeline represented as a Directed Acyclic Graph (DAG). It ensures that nodes (processing units) are executed in the correct order, respecting their dependencies.
+## Pipeline and compilation
 
-## Core Concepts
+A pipeline is a directed acyclic graph (DAG):
 
-### 1. Pipeline as a DAG
+- A **node** is a processing unit: a data source, a transform, a model, a metric, or the Sink.
+- An **edge** connects output ports of one node to input ports of another node. Its `ports_map` lists `(source_port, target_port)` pairs.
+- Each **port** declares an array type (`pd.DataFrame`, `np.ndarray` or `torch.Tensor`), a data category (numerical, categorical or mixed), a shape (for example `"batch features"`), and the execution modes in which it is active.
 
-A pipeline is modeled as a DAG where:
-- **Nodes** represent processing units (data sources, transformations, models, etc.)
-- **Edges** represent data flow and dependencies between nodes
-- The acyclic property ensures no circular dependencies exist
+Call `Pipeline.compile()` before you create a runner. Compilation does these steps:
 
-### 2. Execution Order
+1. Remove the nodes that have no edge (when `settings.autoprune` is `True`).
+2. Validate the graph: one Sink, valid edges, compatible ports, no cycle.
+3. Create the Sink ports from the edges that end at the Sink, in edge order. Each Sink port is a copy of its source port.
+4. Instantiate the node objects. After an edit, a node whose class and config did not change keeps its node object and its fitted state.
 
-The PipelineRunner must determine a valid execution order using **topological sorting**. This algorithm ensures:
-- A node is executed only after all its dependencies have completed
-- The execution respects the data flow direction
-- Multiple valid orderings may exist, any one is acceptable
+Every method that edits the pipeline marks it as uncompiled. Compile it again before the next run.
 
-### 3. Node Execution Modes
+## Execution modes
 
-The runner supports three execution modes:
-- **`TRAIN`**: Fits/trains nodes and produces outputs for downstream nodes
-- **`PREDICT`**: Only transforms data through nodes (no fitting)
-- **`EVALUATE`**: Evaluates performance (placeholder for future implementation)
+| Runner method | Mode         | Start nodes      | Node method called      |
+|---------------|--------------|------------------|-------------------------|
+| `train()`     | `training`   | the Sink         | `node_fit_transform()`  |
+| `infer()`     | `inference`  | the Sink         | `node_transform()`      |
+| `evaluate()`  | `evaluation` | all metric nodes | `node_transform()`      |
 
-### 4. Critical Design Principle: Always Produce Outputs
+Each port has a `mode` list. A port is active when the list contains the current mode or `all`.
 
-**Key Insight**: In all execution modes, nodes must produce outputs because downstream nodes need these outputs as inputs, even during training.
+## Graph walk
 
-This means:
-- **TRAIN mode**: Calls `node_fit_transform()` - fits the node AND produces outputs
-- **PREDICT mode**: Calls `node_transform()` - only transforms to produce outputs
-- **EVALUATE mode**: Calls `node_transform()` - same as predict for now
+The runner walks the graph backwards from the start nodes:
 
-### 5. Data Flow
+1. For a node, find the incoming edges that feed at least one active input port.
+2. Run the source node of each of these edges first (recursively).
+3. Run the node itself.
 
-Data flows through the pipeline via ports:
-- **Input ports**: Where a node receives data from upstream nodes
-- **Output ports**: Where a node produces data for downstream nodes
-- **Port mapping**: Edges specify which output port connects to which input port
+Thus a branch that feeds only inactive ports does not run. For example, the target loader does not run during inference, because the `y` port of a model is active only in `training` and `evaluation`.
 
-## PipelineRunner Responsibilities
+The runner stores the outputs of each node for the current call. A node runs at most once per call. Each call to `train()`, `infer()` or `evaluate()` starts with an empty store.
 
-### 1. Compilation
+## Data between nodes
 
-Before execution, the runner must compile the pipeline:
-- Validate the DAG structure
-- Initialize all node objects
-- Compute the execution order using topological sort
+Between nodes, data travels as `TabularData`. For each input, the runner converts the data to the array type of the receiving port, and passes an `(array, TabularDataContext)` tuple to the node.
 
-### 2. Execution Orchestration
+The `TabularDataContext` lists the columns, the dtypes and the data categories, aligned by position. The runner makes sure that the context does not drift from the data:
 
-During execution, the runner:
-1. Retrieves the topologically sorted node order
-2. Iterates through nodes in this order
-3. For each node:
-   - Collects input data from upstream nodes' outputs
-   - Maps data according to edge port mappings
-   - Executes the node's operation based on mode:
-     - **TRAIN**: `node_fit_transform()` - fits and produces outputs
-     - **PREDICT**: `node_transform()` - only produces outputs
-     - **EVALUATE**: `node_transform()` - same as predict (placeholder)
-   - Stores output data for downstream nodes
+- An output context must name the same columns as the data, in the same order. If not, the runner raises `DataContextError` and names the node and the port.
+- For a DataFrame, the dtypes come from the DataFrame, so stale context dtypes do not propagate.
+- A node must return only the output ports that it declares. If not, the runner raises `NodeError`.
 
-### 3. Data Management
+Nodes build their output contexts with `TabularDataContext.select()` or `TabularDataContext.aligned_to()`, which work by column name.
 
-The runner maintains:
-- **Intermediate results**: Stores outputs from each node for downstream consumption
-- **Context data**: Additional metadata that flows through the pipeline
+## Input checks
 
-### 4. Sink Nodes and Final Outputs
+Before a node runs, the runner checks every active input against the category and the shape of its port. The checks of one node share the dimension names of the `data_shape` strings. For example, `X` (`"batch features"`) and `y` (`"batch targets"`) of a model must have the same number of rows. A mismatch raises `DataTypeError`.
 
-The runner provides a method to retrieve outputs from:
-- **Sink nodes**: Nodes explicitly marked with `node_type = SINK`
-- **Leaf nodes**: Nodes with no successors (end of the pipeline)
+A required input that is missing in the current mode raises `NodeInputError`. Optional ports can stay empty.
 
-## Naive Implementation Strategy
+## External inputs
 
-A naive implementation focuses on correctness over optimization:
+`train()`, `infer()` and `evaluate()` accept `input_data`, keyed by `{node_name: {port_name: (array, context)}}`. Only source nodes with `accepts_inputs = True`, for example `InputsPassthrough`, accept external inputs. A key that names another node, or no node, raises `NodeInputError`.
 
-1. **Sequential Execution**: Execute nodes one at a time in topological order
-2. **In-Memory Storage**: Store all intermediate results in memory
-3. **Simple Data Passing**: Directly pass data between nodes without optimization
-4. **No Parallelization**: Don't attempt concurrent execution
+`TabularTrainValSplit.split()` returns two dicts in this format, for `train()` and `evaluate()`.
 
-### Algorithm Pseudocode
+## Data sources
 
-```
-function run_pipeline(pipeline, mode='train'):
-    # Compile if not already compiled
-    if not pipeline.compiled():
-        compile(pipeline)
-    
-    # Get execution order
-    execution_order = topological_sort(pipeline.graph)
-    
-    # Initialize data storage
-    node_outputs = {}
-    
-    # Execute each node in order
-    for node_name in execution_order:
-        node = pipeline.node_objects[node_name]
-        
-        # Gather inputs from upstream nodes
-        inputs = {}
-        for predecessor in get_predecessors(node_name):
-            edge_data = get_edge_data(predecessor, node_name)
-            for source_port, target_port in edge_data.ports_map:
-                inputs[target_port] = node_outputs[predecessor][source_port]
-        
-        # Execute node based on mode - ALWAYS produces outputs
-        if mode == 'train':
-            # Fit and transform to produce outputs for downstream nodes
-            outputs = node.node_fit_transform(inputs)
-        elif mode == 'predict':
-            # Only transform to produce outputs
-            outputs = node.node_transform(inputs)
-        else:  # evaluate
-            # Same as predict for now (placeholder)
-            outputs = node.node_transform(inputs)
-        
-        # Store outputs for downstream nodes
-        node_outputs[node_name] = outputs
-    
-    return node_outputs
+A data source runs `setup_source()` once for each runner call, in every mode. Thus:
 
-function get_sink_outputs(node_outputs):
-    # Return outputs from sink or leaf nodes only
-    sink_outputs = {}
-    for node_name, node in pipeline.nodes:
-        if node.type == 'sink' or has_no_successors(node_name):
-            sink_outputs[node_name] = node_outputs[node_name]
-    return sink_outputs
-```
+- A reloaded pipeline can run `infer()` without `train()` first.
+- A source can read other data in each mode. For example, `TabularCSVFetcher` reads `inference_csv_path` during inference when you set it, and `csv_path` otherwise.
 
-## Future Enhancements
+## Results
 
-The naive implementation can be enhanced with:
-- **Parallel Execution**: Execute independent nodes concurrently
-- **Lazy Evaluation**: Only compute necessary paths
-- **Caching**: Avoid recomputation of unchanged nodes
-- **Distributed Execution**: Leverage Ray for distributed processing
-- **Checkpointing**: Save intermediate states for fault tolerance
-- **Resource Management**: Optimize memory by releasing unused intermediate results
-
-## Integration with Existing Code
-
-The PipelineRunner integrates with:
-- `Pipeline`: Provides the DAG structure and node objects
-- `Node`: Executes the actual processing logic
-- `Edge`: Defines data flow connections
-- `Port`: Specifies input/output interfaces
-
-The runner uses NetworkX's `topological_sort` function for ordering, which is already a dependency in the pipeline module.
+- `infer()` returns the Sink outputs as `{sink_port: (DataFrame, context)}`, in Sink port order.
+- `evaluate()` returns the metric outputs. A metric node with one output port is keyed by the node name. A metric node with more ports uses `"node_name.port_name"`.
+- `train()` returns nothing. The fitted state stays in the node objects. Save it with `Pipeline.save_params_to_dir()`.

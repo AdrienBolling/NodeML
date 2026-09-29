@@ -8,7 +8,6 @@ the display surface can evolve independently.
 import inspect
 from typing import Any, Protocol, runtime_checkable
 
-
 # ============================================================
 # Helpers
 # ============================================================
@@ -19,16 +18,17 @@ def _in_ipython_notebook() -> bool:
 
     Returns:
         ``True`` if an IPython kernel is active, ``False`` otherwise.
+
     """
     try:
-        from IPython import get_ipython
+        from IPython import get_ipython  # noqa: PLC0415 - optional dependency
 
         shell = get_ipython()
-        if shell is None:
-            return False
-        return "IPKernelApp" in shell.config
-    except Exception:
+    except Exception:  # noqa: BLE001 - any failure means "not a notebook"
         return False
+    if shell is None:
+        return False
+    return "IPKernelApp" in shell.config
 
 
 def _is_class_like(obj: Any) -> bool:
@@ -39,6 +39,7 @@ def _is_class_like(obj: Any) -> bool:
 
     Returns:
         ``True`` if *obj* is a class.
+
     """
     return inspect.isclass(obj)
 
@@ -51,6 +52,7 @@ def _safe_name(obj: Any) -> str:
 
     Returns:
         A human-readable name string.
+
     """
     return getattr(obj, "__name__", type(obj).__name__)
 
@@ -63,6 +65,7 @@ def _safe_qualname(obj: Any) -> str:
 
     Returns:
         The qualified name string.
+
     """
     return getattr(obj, "__qualname__", _safe_name(obj))
 
@@ -75,6 +78,7 @@ def _safe_module(obj: Any) -> str:
 
     Returns:
         The module path string.
+
     """
     return getattr(obj, "__module__", "")
 
@@ -87,14 +91,15 @@ def _safe_doc_first_line(obj: Any) -> str:
 
     Returns:
         The first non-empty line of the docstring, or ``""`` on failure.
+
     """
     try:
         doc = inspect.getdoc(obj)
-        if not doc:
-            return ""
-        return doc.splitlines()[0].strip()
-    except Exception:
+    except Exception:  # noqa: BLE001 - display helper must never raise
         return ""
+    if not doc:
+        return ""
+    return doc.splitlines()[0].strip()
 
 
 def _safe_file(obj: Any) -> str:
@@ -105,10 +110,11 @@ def _safe_file(obj: Any) -> str:
 
     Returns:
         An absolute file path string, or ``""``.
+
     """
     try:
         return inspect.getsourcefile(obj) or ""
-    except Exception:
+    except Exception:  # noqa: BLE001 - display helper must never raise
         return ""
 
 
@@ -120,12 +126,13 @@ def _safe_lineno(obj: Any) -> int | None:
 
     Returns:
         The line number, or ``None`` if it cannot be determined.
+
     """
     try:
         _, lineno = inspect.getsourcelines(obj)
-        return lineno
-    except Exception:
+    except Exception:  # noqa: BLE001 - display helper must never raise
         return None
+    return lineno
 
 
 def _serialize_value(value: Any) -> Any:
@@ -163,6 +170,7 @@ def _format_plain_value(value: Any) -> str:
 
     Returns:
         A string suitable for display in a text table.
+
     """
     if isinstance(value, dict) and value.get("__kind__") == "class":
         return str(value.get("display", ""))
@@ -178,6 +186,7 @@ def _clip(s: str, width: int) -> str:
 
     Returns:
         The original or truncated string.
+
     """
     return s if len(s) <= width else s[: max(0, width - 1)] + "…"
 
@@ -330,6 +339,7 @@ class RegistryDisplayMixin:
         Returns:
             A formatted plain-text table string, or ``"<empty registry>"``
             when there are no entries.
+
         """
         rows = self._rows()
         if not rows:
@@ -338,16 +348,15 @@ class RegistryDisplayMixin:
         if columns is None:
             columns = self._display_columns()
 
-        display_rows: list[dict[str, str]] = []
-        for row in rows:
-            display_rows.append(
-                {col: _format_plain_value(row.get(col, "")) for col in columns}
-            )
+        display_rows: list[dict[str, str]] = [
+            {col: _format_plain_value(row.get(col, "")) for col in columns}
+            for row in rows
+        ]
 
         widths: dict[str, int] = {}
         for col in columns:
             widths[col] = min(
-                max(len(col), max(len(r[col]) for r in display_rows)),
+                max(len(col), *(len(r[col]) for r in display_rows)),
                 max_col_width,
             )
 
@@ -365,13 +374,12 @@ class RegistryDisplayMixin:
         sep = "-+-".join("-" * widths[col] for col in columns)
 
         lines = [header, sep]
-        for row in display_rows:
-            lines.append(
-                " | ".join(
-                    _clip(row[col], widths[col]).ljust(widths[col])
-                    for col in columns
-                )
+        lines.extend(
+            " | ".join(
+                _clip(row[col], widths[col]).ljust(widths[col]) for col in columns
             )
+            for row in display_rows
+        )
 
         return "\n".join(lines)
 
@@ -379,22 +387,24 @@ class RegistryDisplayMixin:
     # Notebook rendering
     # --------------------------------------------------------
 
-    def _list_notebook(
+    def _list_notebook(  # noqa: C901, PLR0915 - one widget layout, kept in one place
         self: _HasRegistry,
         columns: list[str] | None = None,
+        *,
         include_metadata: bool = False,
         include_source_inspector: bool = True,
-    ):
+    ) -> None:
         """Display an interactive ipywidgets table inside a Jupyter notebook.
 
         Args:
             columns: Subset of columns to show. Defaults to auto-detected columns.
             include_metadata: If ``True``, include ``__``-suffixed metadata columns.
             include_source_inspector: If ``True``, add a source-code viewer widget.
+
         """
-        import ipywidgets as widgets
-        import pandas as pd
-        from IPython.display import display
+        import ipywidgets as widgets  # noqa: PLC0415 - optional dependency
+        import pandas as pd  # noqa: PLC0415 - only needed for the widget
+        from IPython.display import display  # noqa: PLC0415 - optional dependency
 
         rows = self._rows()
         if not rows:
@@ -411,11 +421,9 @@ class RegistryDisplayMixin:
 
         columns = [c for c in columns if c in df.columns]
         if "name" not in columns:
-            columns = ["name"] + columns
+            columns = ["name", *columns]
 
-        searchable_columns = [
-            c for c in df.columns if not c.endswith("__object")
-        ]
+        searchable_columns = [c for c in df.columns if not c.endswith("__object")]
 
         # --- Control widgets -------------------------------------------------
 
@@ -463,11 +471,12 @@ class RegistryDisplayMixin:
         table_html = widgets.HTML(value="")
         summary = widgets.HTML()
 
-        def apply_filters():
+        def apply_filters() -> pd.DataFrame:
             """Apply search, sort, column selection, and row limit to the dataframe.
 
             Returns:
                 A filtered and sorted ``DataFrame`` ready for display.
+
             """
             filtered = df.copy()
 
@@ -477,11 +486,7 @@ class RegistryDisplayMixin:
                     filtered[searchable_columns]
                     .fillna("")
                     .astype(str)
-                    .apply(
-                        lambda col: col.str.lower().str.contains(
-                            q, regex=False
-                        )
-                    )
+                    .apply(lambda col: col.str.lower().str.contains(q, regex=False))
                     .any(axis=1)
                 )
                 filtered = filtered[mask]
@@ -497,13 +502,11 @@ class RegistryDisplayMixin:
             if not selected_columns:
                 selected_columns = ["name"]
 
-            selected_columns = [
-                c for c in selected_columns if c in filtered.columns
-            ]
+            selected_columns = [c for c in selected_columns if c in filtered.columns]
 
             return filtered[selected_columns].head(limit.value)
 
-        def render(_=None):
+        def render(_: object = None) -> None:
             """Re-render the HTML table and summary after a widget change."""
             filtered = apply_filters()
             if filtered.empty:
@@ -538,11 +541,7 @@ class RegistryDisplayMixin:
 
         if include_source_inspector:
             class_fields = sorted(
-                {
-                    col[:-8]
-                    for col in df.columns
-                    if col.endswith("__object")
-                }
+                {col[:-8] for col in df.columns if col.endswith("__object")}
             )
 
             if class_fields:
@@ -561,29 +560,24 @@ class RegistryDisplayMixin:
 
                 source_html = widgets.HTML(value="")
 
-                def render_source(_=None):
+                def render_source(_: object = None) -> None:
+                    """Show the source of the selected field for the selected node."""
                     field = inspect_field.value
                     node_name = inspect_node.value
 
                     matched = df[df["name"].astype(str) == str(node_name)]
                     if matched.empty:
-                        source_html.value = (
-                            "<i>No node selected.</i>"
-                        )
+                        source_html.value = "<i>No node selected.</i>"
                         return
 
                     obj_col = f"{field}__object"
                     if obj_col not in matched.columns:
-                        source_html.value = (
-                            "<i>Field not available for this node.</i>"
-                        )
+                        source_html.value = "<i>Field not available for this node.</i>"
                         return
 
                     obj = matched.iloc[0][obj_col]
                     if obj is None or not _is_class_like(obj):
-                        source_html.value = (
-                            "<i>Field not available for this node.</i>"
-                        )
+                        source_html.value = "<i>Field not available for this node.</i>"
                         return
 
                     try:
@@ -602,10 +596,8 @@ class RegistryDisplayMixin:
                             f"<pre style='white-space: pre-wrap; margin: 0;'>{src}</pre>"
                             "</div>"
                         )
-                    except Exception:
-                        source_html.value = (
-                            "<i>Field not available for this node.</i>"
-                        )
+                    except Exception:  # noqa: BLE001 - show a message instead of failing
+                        source_html.value = "<i>Field not available for this node.</i>"
 
                 inspect_field.observe(render_source, names="value")
                 inspect_node.observe(render_source, names="value")
@@ -635,7 +627,7 @@ class RegistryDisplayMixin:
         columns: list[str] | None = None,
         include_metadata: bool = False,
         include_source_inspector: bool = True,
-    ):
+    ) -> str | None:
         """Return a nicely formatted overview of the registry.
 
         In a notebook environment an interactive ipywidgets table is displayed
@@ -654,6 +646,7 @@ class RegistryDisplayMixin:
             A plain-text table string when running outside a notebook (or when
             ipywidgets is unavailable). ``None`` when the notebook widget is
             displayed successfully.
+
         """
         if notebook is None:
             notebook = _in_ipython_notebook()
@@ -665,8 +658,9 @@ class RegistryDisplayMixin:
                     include_metadata=include_metadata,
                     include_source_inspector=include_source_inspector,
                 )
-                return None
             except ImportError:
                 return self._plain_text_table(columns=columns)
+            else:
+                return None
 
         return self._plain_text_table(columns=columns)

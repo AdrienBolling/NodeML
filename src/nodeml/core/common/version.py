@@ -1,9 +1,10 @@
-"""Version model for the NodeML library."""
+"""Semantic version model."""
 
 from pydantic import BaseModel
 
+
 class Version(BaseModel):
-    """Version information for the NodeML library."""
+    """Semantic version, for example the version of a pipeline."""
 
     major: int
     minor: int

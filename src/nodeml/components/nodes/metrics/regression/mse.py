@@ -4,35 +4,31 @@ Wraps ``torchmetrics.MeanSquaredError`` and exposes it as a NodeML
 :class:`~nodeml.core.nodes.metrics.metric_node.MetricNode`.  The node expects
 two input ports:
 
-* ``pred``   – predicted values ``(batch, targets)`` as a numpy array
-* ``target`` – ground-truth values ``(batch, targets)`` as a numpy array
+* ``pred``   - predicted values ``(batch, targets)`` as a numpy array
+* ``target`` - ground-truth values ``(batch, targets)`` as a numpy array
 
 and emits one output port:
 
-* ``score`` – scalar metric value ``(1, 1)`` as a numpy array
+* ``score`` - metric value ``(1, 1)`` as a numpy array, or one column per
+              output ``(1, targets)`` with ``num_outputs > 1``
 
 Setting ``squared=False`` in the running config turns this into RMSE.
 """
 
-from typing import Literal
-
-import numpy as np
-import torch
 from pydantic import Field
-from torchmetrics import MeanSquaredError
+from torchmetrics import MeanSquaredError, Metric
 
-from nodeml.core.common.data.data import (
-    ArrayLikeEnum,
-    DataCategoryEnum,
-    DataStructureEnum,
-    NumericalData,
-    TabularDataContext,
+from nodeml.components.nodes.metrics.base import (
+    TorchMetricRunningConfig,
+    score_out_ports,
+)
+from nodeml.components.nodes.metrics.regression.base import (
+    RegressionMetricNode,
+    regression_in_ports,
 )
 from nodeml.core.nodes.metrics.metric_node import (
-    MetricNode,
     MetricNodeConfig,
     MetricNodeMetadata,
-    MetricNodeRunningConfig,
 )
 from nodeml.core.nodes.node import Port
 
@@ -48,7 +44,7 @@ class MSEMetadata(MetricNodeMetadata):
     )
 
 
-class MSERunningConfig(MetricNodeRunningConfig):
+class MSERunningConfig(TorchMetricRunningConfig):
     """Run-time options for the MSE metric node."""
 
     squared: bool = Field(
@@ -63,9 +59,10 @@ class MSERunningConfig(MetricNodeRunningConfig):
         default=1,
         ge=1,
         description=(
-            "Number of output targets. "
-            "Set to >1 for multi-output regression so that the metric "
-            "averages across outputs correctly."
+            "Number of outputs (target columns). "
+            "With 1, the score is the mean over all outputs. "
+            "With more than 1, the score has one column per output, "
+            "and the inputs must have exactly this number of columns."
         ),
     )
 
@@ -78,94 +75,47 @@ class MSEConfig(MetricNodeConfig[MSERunningConfig]):
         description="Run-time options (squared, num_outputs).",
     )
     in_ports: dict[str, Port] = Field(
-        default={
-            "pred": Port(
-                arr_type=ArrayLikeEnum.NUMPY,
-                data_structure=DataStructureEnum.TABULAR,
-                data_category=DataCategoryEnum.NUMERICAL,
-                data_shape="batch targets",
-                desc="Predicted values (batch, targets).",
-            ),
-            "target": Port(
-                arr_type=ArrayLikeEnum.NUMPY,
-                data_structure=DataStructureEnum.TABULAR,
-                data_category=DataCategoryEnum.NUMERICAL,
-                data_shape="batch targets",
-                desc="Ground-truth target values (batch, targets).",
-            ),
-        },
+        default=regression_in_ports(),
         description="Input ports: 'pred' (predictions) and 'target' (ground truth).",
     )
     out_ports: dict[str, Port] = Field(
-        default={
-            "score": Port(
-                arr_type=ArrayLikeEnum.NUMPY,
-                data_structure=DataStructureEnum.TABULAR,
-                data_category=DataCategoryEnum.NUMERICAL,
-                data_shape="1 1",
-                desc="Scalar metric value.",
-            ),
-        },
-        description="Output ports: 'score' (scalar metric value).",
+        default=score_out_ports(
+            "Metric value (1, 1), or one value per output (1, targets) "
+            "with num_outputs > 1.",
+            per_output=True,
+        ),
+        description="Output ports: 'score' (metric value).",
     )
 
 
-class MSE(
-    MetricNode[
-        np.ndarray,
-        TabularDataContext,
-        np.ndarray,
-        TabularDataContext,
-    ]
-):
+class MSE(RegressionMetricNode):
     """Mean Squared Error metric node.
 
     Converts numpy inputs to torch tensors, delegates to
-    ``torchmetrics.MeanSquaredError``, and returns the scalar result as a
-    ``(1, 1)`` numpy array with a :class:`TabularDataContext`.
+    ``torchmetrics.MeanSquaredError``, and returns the result as one row
+    of float64 values: one column ``mse``, or one column per output
+    ``mse_0``, ``mse_1``, ... with ``num_outputs > 1``.  With
+    ``squared=False``, the prefix is ``rmse``.
     """
 
     metadata = MSEMetadata()
+    score_name = "mse"
 
-    def __init__(self, *, config: MSEConfig) -> None:
-        self._config = config
-        rc = config.running_config
-        self._metric = MeanSquaredError(
-            squared=rc.squared,
-            num_outputs=rc.num_outputs,
-        )
+    def _build_metric(self) -> Metric:
+        """Build the torchmetrics metric.
 
-    # --- MetricNode interface ------------------------------------------------
+        Returns:
+            A ``MeanSquaredError`` metric.
 
-    def update(
-        self, data: dict[str, tuple[np.ndarray, TabularDataContext]]
-    ) -> None:
-        """Feed predictions and targets into the torchmetrics accumulator."""
-        pred, _ = data["pred"]
-        target, _ = data["target"]
-        self._metric.update(
-            torch.from_numpy(np.ascontiguousarray(pred)).float(),
-            torch.from_numpy(np.ascontiguousarray(target)).float(),
-        )
+        """
+        rc = self._config.running_config
+        return MeanSquaredError(squared=rc.squared, num_outputs=rc.num_outputs)
 
-    def compute(self) -> dict[str, tuple[np.ndarray, TabularDataContext]]:
-        """Compute MSE (or RMSE) and return a ``(1, 1)`` result array."""
-        value = self._metric.compute().item()
-        self._metric.reset()
-        return _scalar_result(value, "mse" if self._config.running_config.squared else "rmse")
+    def _score_name(self) -> str:
+        """Return ``"mse"``, or ``"rmse"`` when ``squared`` is ``False``.
 
+        Returns:
+            The name of the score column.
 
-def _scalar_result(
-    value: float, col_name: str
-) -> dict[str, tuple[np.ndarray, TabularDataContext]]:
-    """Wrap a scalar metric value into the port-compatible output format."""
-    return {
-        "score": (
-            np.array([[value]], dtype=np.float64),
-            TabularDataContext(
-                columns=[col_name],
-                dtypes=[np.dtype("float64")],
-                categories=[NumericalData],
-            ),
-        ),
-    }
+        """
+        return "mse" if self._config.running_config.squared else "rmse"

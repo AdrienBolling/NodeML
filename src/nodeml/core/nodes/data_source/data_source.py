@@ -1,14 +1,13 @@
 """Define the base DataSource class for the NodeML Framework."""
 
 from abc import ABC, abstractmethod
-from typing import TypeVar
 
 from pydantic import BaseModel
 
-from nodeml.core.nodes.node import Node, NodeConfig, NodeType
+from nodeml.core.nodes.node import Node, NodeConfig, NodeMetadata, NodeType
 
 
-class DataSourceMetadata(BaseModel):
+class DataSourceMetadata(NodeMetadata):
     """Metadata for a DataSource node."""
 
     _node_type: NodeType = NodeType.SOURCE
@@ -22,10 +21,7 @@ class DataSourceRunningConfig(BaseModel):
     """
 
 
-R = TypeVar("R", bound=DataSourceRunningConfig)
-
-
-class DataSourceConfig[R](NodeConfig):
+class DataSourceConfig[R: DataSourceRunningConfig](NodeConfig):
     """Configuration for all DataSource nodes in the NodeML Framework.
 
     Generic over ``R``, which must be a :class:`DataSourceRunningConfig`
@@ -42,9 +38,18 @@ class DataSourceConfig[R](NodeConfig):
 
 
 class DataSourceNode[D_I, D_C_I, D_O, D_C_O](Node[D_I, D_C_I, D_O, D_C_O], ABC):
-    """Base class for all data source nodes in the NodeML Framework."""
+    """Base class for all data source nodes in the NodeML Framework.
+
+    A source loads its data in every execution mode: :meth:`setup_source`
+    runs once for each runner call (``train``, ``infer`` or ``evaluate``).
+    So a reloaded pipeline can run inference without training first, and a
+    source can read another file in each phase (see
+    :attr:`~nodeml.core.nodes.node.Node.execution_mode`).
+    """
 
     metadata = DataSourceMetadata()
+    # True between node_fit and the node_transform of the same fit_transform.
+    _setup_done_by_fit: bool = False
 
     def __init__(self, *, config: DataSourceConfig) -> None:
         """Initialize the DataSourceNode with the given configuration."""
@@ -54,7 +59,9 @@ class DataSourceNode[D_I, D_C_I, D_O, D_C_O](Node[D_I, D_C_I, D_O, D_C_O], ABC):
     def setup_source(self) -> None:
         """Set up the data source (e.g. establish connections, load resources).
 
-        Called by :meth:`node_fit` during the pipeline's fit phase.
+        Called once for each runner call, in every execution mode.  Read
+        ``self.execution_mode`` to select the resources of the current
+        phase.
         """
         ...
 
@@ -85,6 +92,7 @@ class DataSourceNode[D_I, D_C_I, D_O, D_C_O](Node[D_I, D_C_I, D_O, D_C_O], ABC):
         """
         _ = data  # Unused for data sources
         self.setup_source()
+        self._setup_done_by_fit = True
 
     def node_transform(
         self, data: dict[str, tuple[D_I, D_C_I]]
@@ -98,6 +106,11 @@ class DataSourceNode[D_I, D_C_I, D_O, D_C_O](Node[D_I, D_C_I, D_O, D_C_O], ABC):
             Fetched data
 
         """
+        # In training, node_fit has just run setup_source for this call.
+        if self._setup_done_by_fit:
+            self._setup_done_by_fit = False
+        else:
+            self.setup_source()
         return self.fetch_data(data)
 
     # --- API convenience ---

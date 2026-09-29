@@ -10,7 +10,6 @@ from __future__ import annotations
 import pytest
 
 from nodeml.core.nodes.registry.node_registry import NodeRegistry
-
 from tests.shims.nodes import (
     IdentityTransform,
     IdentityTransformConfig,
@@ -76,3 +75,28 @@ class TestGlobalRegistryHasExpectedComponents:
         }
         missing = expected - set(NODE_REGISTRY.keys())
         assert not missing, f"Missing registered components: {missing}"
+
+
+class TestRegistryLookups:
+    def test_register_does_not_instantiate_the_config(self) -> None:
+        from pydantic import Field
+
+        class _RequiredFieldConfig(IdentityTransformConfig):
+            required: int = Field()
+
+        reg = _fresh_registry()
+        reg.register(
+            name="Required",
+            node_class=IdentityTransform,
+            node_config_class=_RequiredFieldConfig,
+        )
+        assert reg.get("Required")["node_type"] == "transform"
+
+    def test_unknown_name_raises_registry_error(self) -> None:
+        from nodeml.core.common.exceptions import RegistryError
+
+        reg = _fresh_registry()
+        with pytest.raises(RegistryError, match="not registered"):
+            reg.get_node_config_class("missing")
+        with pytest.raises(RegistryError, match="not registered"):
+            reg.get_node_class("missing")

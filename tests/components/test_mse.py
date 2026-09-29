@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from nodeml.components.nodes.metrics.regression.mse import MSE, MSEConfig, MSERunningConfig
+from nodeml.components.nodes.metrics.regression.mse import (
+    MSE,
+    MSEConfig,
+    MSERunningConfig,
+)
 
 
 class TestMSE:
@@ -26,7 +30,7 @@ class TestMSE:
         node = MSE(config=MSEConfig())
         pred = np.array([[1.0], [2.0], [3.0]])
         target = np.array([[1.5], [2.5], [3.5]])
-        # Manually: mean((0.5, 0.5, 0.5)^2) == 0.25
+        # Each error is 0.5, so the mean squared error is 0.25.
         node.update({"pred": (pred, None), "target": (target, None)})
         score, _ = node.compute()["score"]
         np.testing.assert_allclose(score, np.array([[0.25]]))

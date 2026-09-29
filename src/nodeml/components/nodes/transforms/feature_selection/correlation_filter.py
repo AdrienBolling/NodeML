@@ -29,40 +29,41 @@ still applies within the preferred group (the earlier one survives).
 The final output DataFrame preserves the **original** column order of the
 input — reordering is only used internally for drop selection.
 
-* Input  – a ``(batch, feature)`` **numerical** DataFrame.
-* Output – the same DataFrame with redundant features removed.
+* Input  - a ``(batch, feature)`` **numerical** DataFrame.
+* Output - the same DataFrame with redundant features removed.
 
 Implemented with numpy (``np.corrcoef``) for Pearson, or delegates to
 ``scipy.stats.spearmanr`` / ``scipy.stats.kendalltau`` for rank-based
 methods.
 """
 
-from copy import deepcopy
-from typing import Any, Literal, cast
+import warnings
+from typing import Any, Literal
 
 import numpy as np
-from ray import tune
 import pandas as pd
 from pydantic import Field
+from ray import tune
+from scipy.stats import kendalltau, spearmanr
 
-from nodeml.components.utils.dataframe import filter_columns
 from nodeml.core.common.data.data import (
     ArrayLikeEnum,
     DataCategoryEnum,
     DataStructureEnum,
-    TabularDataContext,
 )
 from nodeml.core.nodes.node import Port
 from nodeml.core.nodes.transform.transform import (
     TransformConfig,
     TransformHyperParameters,
     TransformMetadata,
-    TransformNode,
-    TransformRunningConfig,
 )
 
-# Serialisable params: list of column names that survived the filter.
-type _CorrelationFilterParams = dict[str, list[str]]
+from ._column_filter import ColumnFilter, ColumnFilterRunningConfig
+
+# A correlation needs at least two paired observations.
+_MIN_ROWS_FOR_CORRELATION = 2
+# A correlation matrix needs at least two columns.
+_MIN_COLUMNS_FOR_CORRELATION = 2
 
 
 class CorrelationFilterMetadata(TransformMetadata):
@@ -75,17 +76,9 @@ class CorrelationFilterMetadata(TransformMetadata):
     )
 
 
-class CorrelationFilterRunningConfig(TransformRunningConfig):
+class CorrelationFilterRunningConfig(ColumnFilterRunningConfig):
     """Run-time knobs that do not affect the learned parameters."""
 
-    filtering_columns: list[str] | None = Field(
-        default=None,
-        description=(
-            "Subset of columns to evaluate for correlation filtering. "
-            "``None`` (default) evaluates all columns. "
-            "Columns not in this list are always kept in the output."
-        ),
-    )
     preferred_columns: list[str] = Field(
         default_factory=list,
         description=(
@@ -134,8 +127,8 @@ hyperparameter_space: dict[str, Any] = {
 
 class CorrelationFilterConfig(
     TransformConfig[
-        CorrelationFilterRunningConfig,
         CorrelationFilterHyperParameters,
+        CorrelationFilterRunningConfig,
     ]
 ):
     """Full configuration for the CorrelationFilter node."""
@@ -177,129 +170,59 @@ class CorrelationFilterConfig(
     )
 
 
-class CorrelationFilter(
-    TransformNode[
-        pd.DataFrame,
-        TabularDataContext,
-        pd.DataFrame,
-        TabularDataContext,
-        _CorrelationFilterParams,
-    ]
-):
+class CorrelationFilter(ColumnFilter):
     """Remove highly correlated numerical features.
 
-    During :meth:`fit`, computes the pair-wise correlation matrix and
-    greedily marks columns for removal when their absolute correlation
-    with an already-kept column exceeds the threshold.
+    During :meth:`fit`, the filter computes the pair-wise correlation
+    matrix.  It greedily marks a column for removal when its absolute
+    correlation with a kept column is more than the threshold.
 
-    Tie-breaking
-    ------------
-    The greedy pass is **order-dependent**: for every correlated pair the
-    *earlier* column in the iteration order survives and the *later* one
-    is dropped. By default that iteration order is the input column order,
-    so input column order directly determines which column survives a
-    correlated pair.
+    The greedy pass depends on the column order.  For each correlated
+    pair, the *earlier* column survives and the *later* column is removed.
+    By default, this order is the input column order.
 
-    Setting ``running_config.preferred_columns`` moves those names to the
-    front of the internal iteration order (preserving their relative
-    input order), so they are kept over non-preferred correlates. The
-    output DataFrame still follows the original input column order.
+    ``running_config.preferred_columns`` moves these names to the front of
+    the internal order, with their relative input order.  Thus the filter
+    keeps them over non-preferred correlated columns.  The output always
+    follows the input column order.  A pair without a defined correlation
+    (for example, a pair with a constant column) is not correlated.
 
-    Example
-    -------
-    >>> cfg = CorrelationFilterConfig(
-    ...     hyperparameters=CorrelationFilterHyperParameters(
-    ...         threshold=0.9, method="spearman"
-    ...     ),
-    ...     running_config=CorrelationFilterRunningConfig(
-    ...         preferred_columns=["target_feature"],
-    ...     ),
-    ... )
-    >>> node = CorrelationFilter(config=cfg)
+    Example:
+        >>> cfg = CorrelationFilterConfig(
+        ...     hyperparameters=CorrelationFilterHyperParameters(
+        ...         threshold=0.9, method="spearman"
+        ...     ),
+        ...     running_config=CorrelationFilterRunningConfig(
+        ...         preferred_columns=["target_feature"],
+        ...     ),
+        ... )
+        >>> node = CorrelationFilter(config=cfg)
+
     """
 
     metadata = CorrelationFilterMetadata()
     hyperparameter_space = hyperparameter_space
 
-    def __init__(self, *, config: CorrelationFilterConfig) -> None:
-        self._config = config
-        self._params: _CorrelationFilterParams = {"columns_to_keep": []}
-        self._fitted = False
-
-    # --- TransformNode interface ------------------------------------------
-
-    def fit(
-        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
-    ) -> None:
-        """Compute the correlation matrix and identify redundant columns.
-
-        Parameters
-        ----------
-        data:
-            Must contain key ``"input"``.
-        """
-        df, _ = data["input"]
-        candidates = filter_columns(
-            df, self._config.running_config.filtering_columns
-        )
-        threshold = self._config.hyperparameters.threshold
-        method = self._config.hyperparameters.method
-
-        original_candidate_cols = candidates.columns.tolist()
+    def _surviving_columns(self, candidates: pd.DataFrame) -> list[str]:
+        """Return the candidate columns that no kept column correlates with."""
+        original_cols = candidates.columns.tolist()
         preference_ordered_cols = self._apply_preference(
-            original_candidate_cols,
+            original_cols,
             self._config.running_config.preferred_columns,
         )
-        # Reorder candidates so preferred columns come first; the greedy
-        # pass keeps earlier columns, so preferred columns survive any
-        # correlated pair involving a non-preferred column.
+        # Reorder the candidates so that preferred columns come first. The
+        # greedy pass keeps earlier columns, so preferred columns survive
+        # each correlated pair with a non-preferred column.
         reordered = candidates[preference_ordered_cols]
-
-        corr_matrix = self._compute_correlation(reordered, method)
-        cols_to_drop = self._greedy_drop(
-            preference_ordered_cols, corr_matrix, threshold
+        corr_matrix = self._compute_correlation(
+            reordered, self._config.hyperparameters.method
         )
-
-        # Output column order follows the ORIGINAL input order, not the
-        # preference-reordered one used for drop selection.
-        surviving_cols = [
-            c for c in original_candidate_cols if c not in cols_to_drop
-        ]
-
-        # Columns not in the candidate set are always kept.
-        non_candidate_cols = [
-            c for c in df.columns if c not in candidates.columns
-        ]
-        self._params = {
-            "columns_to_keep": non_candidate_cols + surviving_cols,
-        }
-
-    def transform(
-        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
-    ) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
-        """Subset the DataFrame to the columns identified during fit.
-
-        Parameters
-        ----------
-        data:
-            Must contain key ``"input"``.
-        """
-        df, ctx = data["input"]
-        keep = self._params["columns_to_keep"]
-        dropped = [c for c in df.columns if c not in set(keep)]
-
-        out_ctx = deepcopy(ctx)
-        out_ctx.remove_columns(dropped)
-        return {"output": (cast("pd.DataFrame", df[keep]), out_ctx)}
-
-    def get_params(self) -> _CorrelationFilterParams:
-        """Return the list of columns that survived filtering."""
-        return self._params
-
-    def set_params(self, params: _CorrelationFilterParams) -> None:
-        """Restore a previously fitted column list (checkpointing)."""
-        self._params = params
-        self._fitted = True
+        cols_to_drop = self._greedy_drop(
+            preference_ordered_cols,
+            corr_matrix,
+            self._config.hyperparameters.threshold,
+        )
+        return [col for col in original_cols if col not in cols_to_drop]
 
     # --- Private helpers --------------------------------------------------
 
@@ -321,41 +244,52 @@ class CorrelationFilter(
         return head + tail
 
     @staticmethod
-    def _compute_correlation(
-        df: pd.DataFrame, method: str
-    ) -> np.ndarray:
-        """Return an ``(n_features, n_features)`` absolute correlation matrix."""
+    def _compute_correlation(df: pd.DataFrame, method: str) -> np.ndarray:
+        """Return the ``(n_features, n_features)`` absolute correlation matrix.
+
+        A pair without a defined correlation (for example, a pair with a
+        constant column) gets 0, so the filter keeps both columns.
+        """
         arr = df.to_numpy(dtype=np.float64, na_value=np.nan)
+        n = arr.shape[1]
+        if n < _MIN_COLUMNS_FOR_CORRELATION:
+            return np.ones((n, n))  # One column or none: no pair to compare.
 
-        if method == "pearson":
-            # Drop rows with any NaN for corrcoef (it does not handle NaN).
-            mask = ~np.isnan(arr).any(axis=1)
-            clean = arr[mask]
-            if clean.shape[0] < 2:
-                return np.zeros((arr.shape[1], arr.shape[1]))
-            return np.abs(np.corrcoef(clean, rowvar=False))
+        with warnings.catch_warnings(), np.errstate(invalid="ignore", divide="ignore"):
+            # Constant columns make numpy and scipy warn; they get 0 below.
+            warnings.simplefilter("ignore", RuntimeWarning)
+            if method == "pearson":
+                corr = CorrelationFilter._pearson(arr)
+            elif method == "spearman":
+                corr, _ = spearmanr(arr, nan_policy="omit")
+                if np.ndim(corr) == 0:
+                    # spearmanr returns one value for two columns.
+                    corr = np.array([[1.0, corr], [corr, 1.0]])
+            else:  # The remaining method is "kendall".
+                corr = CorrelationFilter._kendall(arr)
+        return np.nan_to_num(np.abs(np.asarray(corr, dtype=np.float64)), nan=0.0)
 
-        if method == "spearman":
-            from scipy.stats import spearmanr
+    @staticmethod
+    def _pearson(arr: np.ndarray) -> np.ndarray:
+        """Return the Pearson correlation matrix of the rows without NaN."""
+        clean = arr[~np.isnan(arr).any(axis=1)]
+        if clean.shape[0] < _MIN_ROWS_FOR_CORRELATION:
+            return np.zeros((arr.shape[1], arr.shape[1]))
+        return np.corrcoef(clean, rowvar=False)
 
-            corr, _ = spearmanr(arr, nan_policy="omit")
-            # spearmanr returns a scalar when n_features == 1.
-            corr = np.atleast_2d(corr)
-            return np.abs(corr)
-
-        # method == "kendall"
-        from scipy.stats import kendalltau
-
+    @staticmethod
+    def _kendall(arr: np.ndarray) -> np.ndarray:
+        """Return the Kendall tau matrix, with pairwise removal of NaN."""
         n = arr.shape[1]
         corr = np.ones((n, n))
         for i in range(n):
             for j in range(i + 1, n):
                 mask = ~(np.isnan(arr[:, i]) | np.isnan(arr[:, j]))
-                if mask.sum() < 2:
+                if mask.sum() < _MIN_ROWS_FOR_CORRELATION:
                     corr[i, j] = corr[j, i] = 0.0
                 else:
                     tau, _ = kendalltau(arr[mask, i], arr[mask, j])
-                    corr[i, j] = corr[j, i] = abs(tau)
+                    corr[i, j] = corr[j, i] = tau
         return corr
 
     @staticmethod

@@ -44,7 +44,6 @@ from nodeml.core.nodes.transform.transform import (
     TransformRunningConfig,
 )
 
-
 # ---------------------------------------------------------------------------
 # DataSource shim
 # ---------------------------------------------------------------------------
@@ -96,9 +95,7 @@ class ConstantSource(
             raise RuntimeError(msg)
         return {"output": self._payload}
 
-    def set_payload(
-        self, payload: tuple[pd.DataFrame, TabularDataContext]
-    ) -> None:
+    def set_payload(self, payload: tuple[pd.DataFrame, TabularDataContext]) -> None:
         """Change the DataFrame this source emits on its output port."""
         self._payload = payload
 
@@ -174,9 +171,7 @@ class IdentityTransform(
         self.fit_calls = 0
         self.transform_calls = 0
 
-    def fit(
-        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
-    ) -> None:
+    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
         self.fit_calls += 1
 
     def transform(
@@ -267,9 +262,7 @@ class MeanModel(
         self._mean = 0.0
         self._target_ctx: TabularDataContext | None = None
 
-    def fit(
-        self, data: dict[str, tuple[np.ndarray, TabularDataContext]]
-    ) -> None:
+    def fit(self, data: dict[str, tuple[np.ndarray, TabularDataContext]]) -> None:
         _, _ = data["X"]
         y, y_ctx = data["y"]
         self._mean = float(np.mean(y))
@@ -354,11 +347,12 @@ class SumCountMetric(
         self._config = config
         self._count = 0
 
-    def update(
-        self, data: dict[str, tuple[np.ndarray, TabularDataContext]]
-    ) -> None:
+    def update(self, data: dict[str, tuple[np.ndarray, TabularDataContext]]) -> None:
         pred, _ = data["pred"]
         self._count += int(pred.shape[0])
+
+    def reset(self) -> None:
+        self._count = 0
 
     def compute(self) -> dict[str, tuple[np.ndarray, TabularDataContext]]:
         return {

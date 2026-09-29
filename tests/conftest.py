@@ -17,15 +17,12 @@ import pytest
 # Triggers component auto-registration — must happen before any test that
 # looks up nodes in ``NODE_REGISTRY`` by name.
 import nodeml  # noqa: F401
-
 from nodeml.core.common.data.data import (
     NumericalData,
     TabularData,
     TabularDataContext,
 )
-
 from tests.shims import tabular as tabular_shim
-
 
 # ---------------------------------------------------------------------------
 # Deterministic tabular fixtures
@@ -34,7 +31,7 @@ from tests.shims import tabular as tabular_shim
 
 @pytest.fixture
 def numerical_dataframe() -> pd.DataFrame:
-    """A 20×3 deterministic numerical DataFrame."""
+    """Return a 20x3 deterministic numerical DataFrame."""
     return tabular_shim.numerical_df()
 
 

@@ -93,8 +93,9 @@ def split_execution_graph_into_columns(
             node_columns[source_node] = -int(max_depth) - 1
 
     # Place metric nodes in their own column.
+    metric_node_names = set(pipeline.get_metric_node_names())
     for node in graph.nodes:
-        if pipeline.internal_config.nodes[node][1].node_type == NodeType.METRIC:
+        if node in metric_node_names:
             node_columns[node] = 1
 
     columns: dict[int, set[str]] = {}
@@ -884,7 +885,7 @@ def render_pipeline_graph_plotly(  # noqa: C901, PLR0912, PLR0915 - one figure, 
     version = pipeline.version
 
     graph = pipeline.graph
-    node_configs = pipeline.internal_config.nodes
+    node_configs = pipeline.resolved_nodes
 
     columns = split_execution_graph_into_columns(pipeline=pipeline)
     if figsize is None:

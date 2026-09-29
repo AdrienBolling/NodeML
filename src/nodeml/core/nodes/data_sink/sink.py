@@ -13,28 +13,17 @@ from nodeml.core.nodes.node import Node, NodeConfig, NodeMetadata, NodeType, Por
 class SinkConfig(NodeConfig):
     """Configuration for a Sink node.
 
-    Provides a default ``dump`` input port and a placeholder ``_`` output port.
-    Both accept mixed-category pandas data with arbitrary shape. The actual
-    ports are redefined during pipeline compilation when connections are made.
+    A pipeline has one Sink.  Send every output that you need to the Sink
+    with an edge: ``Edge(source="model", target="sink", ports_map=[("pred",
+    "pred")])``.  At compile time, the pipeline creates one Sink input port
+    and one Sink output port for each ``(source_port, sink_port)`` pair, with
+    the definition of the source port.  The Sink ports follow the order of
+    the edges.  So the default config declares no ports.
     """
 
     node_type: NodeType = NodeType.SINK
-    in_ports: dict[str, Port] = {
-        "dump": Port(
-            arr_type=ArrayLikeEnum.PANDAS,
-            data_category=DataCategoryEnum.MIXED,
-            data_shape="_ _",
-            desc="All inputs will be sent here for dumping. All inputs will be sent here for dumping. The input nodes will be redefined during pipeline compilation",
-        )
-    }
-    out_ports: dict[str, Port] = {
-        "_": Port(
-            arr_type=ArrayLikeEnum.PANDAS,
-            data_category=DataCategoryEnum.MIXED,
-            data_shape="_ _",
-            desc="This port is for compatibility with the rest of the pipeline. The output nodes will be redefined during pipeline compilation",
-        )
-    }
+    in_ports: dict[str, Port] = {}
+    out_ports: dict[str, Port] = {}
 
 
 class SinkMetadata(NodeMetadata):
@@ -44,9 +33,9 @@ class SinkMetadata(NodeMetadata):
 class Sink(Node[pd.DataFrame, TabularDataContext, pd.DataFrame, TabularDataContext]):
     """Terminal node that collects pipeline outputs.
 
-    A Sink consumes data on its input ports and passes it through unchanged.
-    New input/output port pairs are added dynamically during pipeline
-    compilation via :meth:`add_port`.
+    A Sink consumes data on its input ports and passes it through unchanged,
+    in the order of its output ports.  The ports are created during pipeline
+    compilation (see :class:`SinkConfig`).
     """
 
     metadata = SinkMetadata()
@@ -64,28 +53,32 @@ class Sink(Node[pd.DataFrame, TabularDataContext, pd.DataFrame, TabularDataConte
     def node_transform(
         self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
     ) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
-        """Transform with the Sink Node. This method will be called during all phase of the pipeline."""
-        # Return the data to be dumped.
-        return data
+        """Return the inputs unchanged, ordered like the output ports.
 
-    def add_port(self, port_name: str) -> None:
+        Inputs without a matching output port come last, in their input
+        order.
+        """
+        ordered = {name: data[name] for name in self.out_ports if name in data}
+        ordered.update(
+            {name: value for name, value in data.items() if name not in ordered}
+        )
+        return ordered
+
+    def add_port(self, port_name: str, port: Port | None = None) -> None:
         """Add a matching input/output port pair to the Sink.
-
-        Called during pipeline compilation when connecting upstream nodes.
 
         Args:
             port_name: Name for the new port pair.
+            port: Port definition to copy.  When ``None``, the port accepts
+                mixed-category pandas data of any shape.
 
         """
-        self.in_ports[port_name] = Port(
-            arr_type=ArrayLikeEnum.PANDAS,
-            data_category=DataCategoryEnum.MIXED,
-            data_shape="_ _",
-            desc=f"Auto Input port for {port_name}.",
-        )
-        self.out_ports[port_name] = Port(
-            arr_type=ArrayLikeEnum.PANDAS,
-            data_category=DataCategoryEnum.MIXED,
-            data_shape="_ _",
-            desc=f"Auto Output port for {port_name}.",
-        )
+        if port is None:
+            port = Port(
+                arr_type=ArrayLikeEnum.PANDAS,
+                data_category=DataCategoryEnum.MIXED,
+                data_shape="_ _",
+                desc=f"Auto port for {port_name}.",
+            )
+        self.in_ports[port_name] = port.model_copy(deep=True)
+        self.out_ports[port_name] = port.model_copy(deep=True)

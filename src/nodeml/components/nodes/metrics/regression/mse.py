@@ -9,7 +9,8 @@ two input ports:
 
 and emits one output port:
 
-* ``score`` - scalar metric value ``(1, 1)`` as a numpy array
+* ``score`` - metric value ``(1, 1)`` as a numpy array, or one column per
+              output ``(1, targets)`` with ``num_outputs > 1``
 
 Setting ``squared=False`` in the running config turns this into RMSE.
 """
@@ -56,9 +57,10 @@ class MSERunningConfig(MetricNodeRunningConfig):
         default=1,
         ge=1,
         description=(
-            "Number of output targets. "
-            "Set to >1 for multi-output regression so that the metric "
-            "averages across outputs correctly."
+            "Number of outputs (target columns). "
+            "With 1, the score is the mean over all outputs. "
+            "With more than 1, the score has one column per output, "
+            "and the inputs must have exactly this number of columns."
         ),
     )
 
@@ -75,8 +77,12 @@ class MSEConfig(MetricNodeConfig[MSERunningConfig]):
         description="Input ports: 'pred' (predictions) and 'target' (ground truth).",
     )
     out_ports: dict[str, Port] = Field(
-        default=score_out_ports("Scalar metric value."),
-        description="Output ports: 'score' (scalar metric value).",
+        default=score_out_ports(
+            "Metric value (1, 1), or one value per output (1, targets) "
+            "with num_outputs > 1.",
+            per_output=True,
+        ),
+        description="Output ports: 'score' (metric value).",
     )
 
 
@@ -84,8 +90,10 @@ class MSE(RegressionMetricNode):
     """Mean Squared Error metric node.
 
     Converts numpy inputs to torch tensors, delegates to
-    ``torchmetrics.MeanSquaredError``, and returns the scalar result as a
-    ``(1, 1)`` numpy array with a :class:`TabularDataContext`.
+    ``torchmetrics.MeanSquaredError``, and returns the result as one row
+    of float64 values: one column ``mse``, or one column per output
+    ``mse_0``, ``mse_1``, ... with ``num_outputs > 1``.  With
+    ``squared=False``, the prefix is ``rmse``.
     """
 
     metadata = MSEMetadata()

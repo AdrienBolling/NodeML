@@ -9,7 +9,8 @@ two input ports:
 
 and emits one output port:
 
-* ``score`` - scalar metric value ``(1, 1)`` as a numpy array
+* ``score`` - metric value ``(1, 1)`` as a numpy array, or one column per
+              output ``(1, targets)`` with ``multioutput='raw_values'``
 
 R² = 1 indicates a perfect fit; R² = 0 means the model predicts no better
 than the target mean.  Negative values are possible when the model is
@@ -68,7 +69,8 @@ class R2ScoreRunningConfig(MetricNodeRunningConfig):
             "Strategy for aggregating across multiple outputs. "
             "``'uniform_average'`` averages scores equally. "
             "``'variance_weighted'`` weights by target variance. "
-            "``'raw_values'`` returns per-output scores (not reduced to scalar)."
+            "``'raw_values'`` returns one score per output "
+            "(columns ``r2_0``, ``r2_1``, ...)."
         ),
     )
 
@@ -85,8 +87,12 @@ class R2ScoreConfig(MetricNodeConfig[R2ScoreRunningConfig]):
         description="Input ports: 'pred' (predictions) and 'target' (ground truth).",
     )
     out_ports: dict[str, Port] = Field(
-        default=score_out_ports("Scalar metric value."),
-        description="Output ports: 'score' (scalar metric value).",
+        default=score_out_ports(
+            "Metric value (1, 1), or one value per output (1, targets) "
+            "with multioutput='raw_values'.",
+            per_output=True,
+        ),
+        description="Output ports: 'score' (metric value).",
     )
 
 
@@ -94,8 +100,9 @@ class R2(RegressionMetricNode):
     """R-squared metric node.
 
     Converts numpy inputs to torch tensors, delegates to
-    ``torchmetrics.R2Score``, and returns the scalar result as a
-    ``(1, 1)`` numpy array with a :class:`TabularDataContext`.
+    ``torchmetrics.R2Score``, and returns the result as one row
+    of float64 values: one column ``r2``, or one column per output
+    ``r2_0``, ``r2_1``, ... with ``multioutput='raw_values'``.
     """
 
     metadata = R2ScoreMetadata()

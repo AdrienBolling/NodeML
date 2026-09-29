@@ -26,45 +26,57 @@ from nodeml.core.nodes.node import Port
 type MetricData = dict[str, tuple[np.ndarray, TabularDataContext]]
 
 
-def score_out_ports(desc: str) -> dict[str, Port]:
+def score_out_ports(desc: str, *, per_output: bool = False) -> dict[str, Port]:
     """Return the output ports of a metric node: one ``score`` port.
 
     Args:
         desc: Description of the score.
+        per_output: If ``True``, the score can have one column per output,
+            so the port shape is ``"1 _"``.  Else it is ``"1 1"``.
 
     Returns:
         Mapping with the ``score`` port.
 
     """
+    # "_" is an anonymous dimension.  A named dimension would be shared by
+    # all input ports of a node that receives several scores (for example
+    # the Sink), and scores with other column counts would fail the check.
     return {
         "score": Port(
             arr_type=ArrayLikeEnum.NUMPY,
             data_structure=DataStructureEnum.TABULAR,
             data_category=DataCategoryEnum.NUMERICAL,
-            data_shape="1 1",
+            data_shape="1 _" if per_output else "1 1",
             desc=desc,
         ),
     }
 
 
-def score_result(value: float, name: str) -> MetricData:
+def score_result(value: torch.Tensor | float, name: str) -> MetricData:
     """Wrap a metric value into the output of the ``score`` port.
 
     Args:
-        value: The metric value.
-        name: Name of the score column.
+        value: The metric value: a scalar, or one value per output.
+        name: Name of the score column.  With more than one value, the
+            columns are ``name_0``, ``name_1``, ...
 
     Returns:
-        Mapping from ``"score"`` to a ``(1, 1)`` float64 array and its context.
+        Mapping from ``"score"`` to a ``(1, n_values)`` float64 array and
+        its context.
 
     """
+    # np.array copies the values, so a later reset() cannot change them.
+    values = np.array(torch.as_tensor(value).detach().cpu().numpy(), dtype=np.float64)
+    values = values.reshape(1, -1)
+    n_values = values.shape[1]
+    columns = [name] if n_values == 1 else [f"{name}_{i}" for i in range(n_values)]
     return {
         "score": (
-            np.array([[value]], dtype=np.float64),
+            values,
             TabularDataContext(
-                columns=[name],
-                dtypes=[np.dtype("float64")],
-                categories=[NumericalData],
+                columns=columns,
+                dtypes=[np.dtype("float64")] * n_values,
+                categories=[NumericalData] * n_values,
             ),
         ),
     }
@@ -148,16 +160,17 @@ class TorchMetricNode(
         self._metric.update(*self._to_tensors(np.asarray(pred), np.asarray(target)))
 
     def compute(self) -> MetricData:
-        """Compute the metric and return it as a ``(1, 1)`` array.
+        """Compute the metric and return it as one row.
 
-        The accumulated state does not change.
+        The row has one column, or one column per output for a metric that
+        returns one value per output.  The accumulated state does not
+        change.
 
         Returns:
-            Mapping from ``"score"`` to the value and its context.
+            Mapping from ``"score"`` to the values and their context.
 
         """
-        value = self._metric.compute().item()
-        return score_result(value, self._score_name())
+        return score_result(self._metric.compute(), self._score_name())
 
     def reset(self) -> None:
         """Clear the state of the torchmetrics metric."""

@@ -11,6 +11,7 @@ from sklearn import metrics as skm
 
 from nodeml.components.nodes.metrics.regression.mse import MSE, MSEConfig
 from nodeml.components.nodes.metrics.regression.r2_score import R2, R2ScoreConfig
+from nodeml.core.common.exceptions import NodeInputError
 from nodeml.core.nodes.registry.node_registry import NODE_REGISTRY
 from nodeml.core.pipeline.runners.smart_runner import SmartRunner
 from tests.shims.pipelines import build_source_model_sink_pipeline
@@ -92,6 +93,114 @@ class TestValues:
         score = _score(_node(name, **running), pred, target)
 
         np.testing.assert_allclose(score, [[reference(target, pred)]], rtol=1e-9)
+
+
+@pytest.fixture
+def multi_output_pair() -> tuple[np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(5)
+    target = rng.normal(loc=[2.0, -3.0], scale=[1.0, 4.0], size=(30, 2))
+    pred = target + rng.normal(scale=[0.3, 1.5], size=(30, 2))
+    return pred, target
+
+
+def _raw(function: Callable[..., np.ndarray]) -> Callable[..., np.ndarray]:
+    return lambda t, p: function(t, p, multioutput="raw_values")
+
+
+# (registered name, running options, column prefix, sklearn per-output function).
+PER_OUTPUT_CASES: list[tuple[str, dict, str, Callable[..., np.ndarray]]] = [
+    ("MSE", {"num_outputs": 2}, "mse", _raw(skm.mean_squared_error)),
+    (
+        "MSE",
+        {"num_outputs": 2, "squared": False},
+        "rmse",
+        _raw(skm.root_mean_squared_error),
+    ),
+    ("MAE", {"num_outputs": 2}, "mae", _raw(skm.mean_absolute_error)),
+    ("R2Score", {"multioutput": "raw_values"}, "r2", _raw(skm.r2_score)),
+]
+
+# (registered name, running options, column, sklearn aggregated function).
+AGGREGATED_CASES: list[tuple[str, dict, str, Callable[..., float]]] = [
+    ("MSE", {}, "mse", skm.mean_squared_error),
+    ("MAE", {}, "mae", skm.mean_absolute_error),
+    ("MAPE", {}, "mape", skm.mean_absolute_percentage_error),
+    ("R2Score", {}, "r2", skm.r2_score),
+    (
+        "R2Score",
+        {"multioutput": "variance_weighted"},
+        "r2",
+        lambda t, p: skm.r2_score(t, p, multioutput="variance_weighted"),
+    ),
+]
+
+
+class TestMultiOutput:
+    @pytest.mark.parametrize(
+        ("name", "running", "prefix", "reference"), PER_OUTPUT_CASES
+    )
+    def test_one_column_per_output(
+        self,
+        name: str,
+        running: dict,
+        prefix: str,
+        reference: Callable,
+        multi_output_pair,
+    ) -> None:
+        pred, target = multi_output_pair
+
+        out = _node(name, **running).node_transform(_data(pred, target))
+        score, ctx = out["score"]
+
+        assert score.shape == (1, 2)
+        assert score.dtype == np.float64
+        assert ctx.columns == [f"{prefix}_0", f"{prefix}_1"]
+        np.testing.assert_allclose(score[0], reference(target, pred), rtol=1e-12)
+
+    @pytest.mark.parametrize(
+        ("name", "running", "column", "reference"), AGGREGATED_CASES
+    )
+    def test_aggregated_score_has_one_column(
+        self,
+        name: str,
+        running: dict,
+        column: str,
+        reference: Callable,
+        multi_output_pair,
+    ) -> None:
+        pred, target = multi_output_pair
+
+        out = _node(name, **running).node_transform(_data(pred, target))
+        score, ctx = out["score"]
+
+        assert ctx.columns == [column]
+        np.testing.assert_allclose(score, [[reference(target, pred)]], rtol=1e-12)
+
+    def test_raw_values_with_one_output_keep_one_column(self, regression_pair) -> None:
+        pred, target = regression_pair
+
+        out = _node("R2Score", multioutput="raw_values").node_transform(
+            _data(pred, target)
+        )
+        score, ctx = out["score"]
+
+        assert ctx.columns == ["r2"]
+        np.testing.assert_allclose(score, [[skm.r2_score(target, pred)]], rtol=1e-12)
+
+    @pytest.mark.parametrize("name", ["MSE", "MAE"])
+    def test_num_outputs_must_match_the_columns(
+        self, name: str, multi_output_pair
+    ) -> None:
+        pred, target = multi_output_pair
+
+        with pytest.raises(NodeInputError, match="num_outputs"):
+            _score(_node(name, num_outputs=3), pred, target)
+
+    def test_pred_and_target_shapes_must_match(self, multi_output_pair) -> None:
+        pred, target = multi_output_pair
+
+        with pytest.raises(NodeInputError, match="same shape"):
+            _score(_node("MSE"), pred[:, :1], target)
 
 
 class TestMetricState:

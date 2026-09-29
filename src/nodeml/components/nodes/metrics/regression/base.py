@@ -9,6 +9,7 @@ from nodeml.core.common.data.data import (
     DataCategoryEnum,
     DataStructureEnum,
 )
+from nodeml.core.common.exceptions import NodeInputError
 from nodeml.core.nodes.metrics.metric_node import MetricNodeConfig
 from nodeml.core.nodes.node import Port
 
@@ -72,10 +73,31 @@ class RegressionMetricNode(TorchMetricNode):
         Returns:
             The ``(pred, target)`` tensors.
 
+        Raises:
+            NodeInputError: If *pred* and *target* have different shapes, or
+                if the number of columns differs from ``num_outputs``.
+
         """
+        pred = pred.reshape(len(pred), -1)
+        target = target.reshape(len(target), -1)
+        if pred.shape != target.shape:
+            msg = (
+                f"{type(self).__name__}: pred and target must have the same shape, "
+                f"got {pred.shape} and {target.shape}."
+            )
+            raise NodeInputError(msg)
+        # MSE and MAE have a num_outputs option.  With more than one output,
+        # torchmetrics gives one score per column and needs that many columns.
+        num_outputs = getattr(self._config.running_config, "num_outputs", 1)
+        if num_outputs > 1 and pred.shape[1] != num_outputs:
+            msg = (
+                f"{type(self).__name__}: num_outputs is {num_outputs}, but the "
+                f"inputs have {pred.shape[1]} columns."
+            )
+            raise NodeInputError(msg)
         pred_t = torch.from_numpy(np.ascontiguousarray(pred, dtype=np.float64))
         target_t = torch.from_numpy(np.ascontiguousarray(target, dtype=np.float64))
-        if pred_t.ndim > 1 and pred_t.shape[-1] == 1:
+        if pred_t.shape[-1] == 1:
             pred_t = pred_t.squeeze(-1)
             target_t = target_t.squeeze(-1)
         return pred_t, target_t

@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from typing import Any, Literal
 
 import torch
-from pydantic import Field
+from pydantic import BaseModel, Field, model_validator
 from torch import nn
 
 from nodeml.components.nodes.models._common import (
@@ -15,7 +15,12 @@ from nodeml.components.nodes.models._common import (
 )
 from nodeml.core.common.data.data import TabularDataContext
 from nodeml.core.common.exceptions import NodeConfigError, NodeInputError
-from nodeml.core.nodes.models.model import Model, ModelConfig, ModelRunningConfig
+from nodeml.core.nodes.models.model import (
+    Model,
+    ModelConfig,
+    ModelHyperParameters,
+    ModelRunningConfig,
+)
 
 ACTIVATIONS: dict[str, type[nn.Module]] = {
     "relu": nn.ReLU,
@@ -26,6 +31,16 @@ ACTIVATIONS: dict[str, type[nn.Module]] = {
 type TorchParams = dict[str, Any]
 
 
+class TorchHyperParameters(ModelHyperParameters):
+    """Hyperparameters that the PyTorch model nodes share."""
+
+    learning_rate: float = Field(
+        default=1e-3,
+        gt=0,
+        description="Learning rate for the Adam optimiser.",
+    )
+
+
 class TorchRunningConfig(ModelRunningConfig):
     """Training options that the PyTorch model nodes share.
 
@@ -33,11 +48,6 @@ class TorchRunningConfig(ModelRunningConfig):
     usually stay fixed during a hyperparameter search.
     """
 
-    learning_rate: float = Field(
-        default=1e-3,
-        gt=0,
-        description="Learning rate for the Adam optimiser.",
-    )
     epochs: int = Field(
         default=100,
         ge=1,
@@ -65,6 +75,72 @@ class TorchRunningConfig(ModelRunningConfig):
             "Predictions always come back on the CPU."
         ),
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_learning_rate(cls, data: Any) -> Any:
+        """Refuse ``learning_rate``, which is now a hyperparameter.
+
+        Without this check, pydantic ignores the unknown field and the
+        node trains with the default learning rate.
+
+        Raises:
+            ValueError: If *data* has a ``learning_rate`` key.
+
+        """
+        if isinstance(data, dict) and "learning_rate" in data:
+            msg = (
+                "learning_rate is a hyperparameter. "
+                "Set hyperparameters.learning_rate instead."
+            )
+            raise ValueError(msg)
+        return data
+
+
+class TorchModelConfig[H: TorchHyperParameters, R: TorchRunningConfig](
+    ModelConfig[H, R]
+):
+    """Base configuration of the PyTorch model nodes.
+
+    Configs of NodeML 0.1.0 have ``learning_rate`` in the running
+    config.  A validator moves the value into the hyperparameters, so these
+    configs still load.
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _move_learning_rate(cls, data: Any) -> Any:
+        """Move ``running_config.learning_rate`` into the hyperparameters.
+
+        Args:
+            data: The raw input of the config.
+
+        Returns:
+            The input, with ``learning_rate`` in the hyperparameters.
+
+        Raises:
+            ValueError: If both places set a learning rate.
+
+        """
+        if not isinstance(data, dict):
+            return data
+        running = data.get("running_config")
+        if not isinstance(running, dict) or "learning_rate" not in running:
+            return data
+        running = dict(running)
+        learning_rate = running.pop("learning_rate")
+        hyperparameters = data.get("hyperparameters") or {}
+        if isinstance(hyperparameters, BaseModel):
+            hyperparameters = hyperparameters.model_dump()
+        hyperparameters = dict(hyperparameters)
+        if "learning_rate" in hyperparameters:
+            msg = (
+                "learning_rate is set in running_config and in hyperparameters. "
+                "Set it only in hyperparameters."
+            )
+            raise ValueError(msg)
+        hyperparameters["learning_rate"] = learning_rate
+        return {**data, "running_config": running, "hyperparameters": hyperparameters}
 
 
 class TorchModelNode(
@@ -180,7 +256,8 @@ class TorchModelNode(
 
         """
         running = self._config.running_config
-        optimiser = torch.optim.Adam(network.parameters(), lr=running.learning_rate)
+        learning_rate = self._config.hyperparameters.learning_rate
+        optimiser = torch.optim.Adam(network.parameters(), lr=learning_rate)
         loss_fn = nn.MSELoss()
         n_rows = X.shape[0]
         network.train()
@@ -299,7 +376,7 @@ class TorchModelNode(
 
         Raises:
             NodeInputError: If the params have weights but no network size.
-                NodeML 0.1 did not save the network size.
+                NodeML 0.1.0 did not save the network size.
             NodeConfigError: If the config asks for CUDA and CUDA is not
                 available.
 
@@ -315,7 +392,7 @@ class TorchModelNode(
         if in_features is None or out_features is None:
             msg = (
                 f"The params of {type(self).__name__} have no network size "
-                "(in_features, out_features). NodeML 0.1 did not save it. "
+                "(in_features, out_features). NodeML 0.1.0 did not save it. "
                 "Train the node again."
             )
             raise NodeInputError(msg)

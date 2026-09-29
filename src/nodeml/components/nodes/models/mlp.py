@@ -23,6 +23,8 @@ from torch import nn
 
 from nodeml.components.nodes.models._torch_base import (
     ACTIVATIONS,
+    TorchHyperParameters,
+    TorchModelConfig,
     TorchModelNode,
     TorchRunningConfig,
 )
@@ -32,11 +34,7 @@ from nodeml.core.common.data.data import (
     DataStructureEnum,
 )
 from nodeml.core.common.enums import NodeExecutionMode
-from nodeml.core.nodes.models.model import (
-    ModelConfig,
-    ModelHyperParameters,
-    ModelMetadata,
-)
+from nodeml.core.nodes.models.model import ModelMetadata
 from nodeml.core.nodes.node import Port
 
 
@@ -51,7 +49,7 @@ class MLPMetadata(ModelMetadata):
     )
 
 
-class MLPHyperParameters(ModelHyperParameters):
+class MLPHyperParameters(TorchHyperParameters):
     """Tuneable hyperparameters for the MLP.
 
     These are the parameters that make sense to explore during
@@ -99,6 +97,7 @@ class MLPRunningConfig(TorchRunningConfig):
 
 
 hyperparameter_space: dict[str, Any] = {
+    "learning_rate": tune.loguniform(1e-4, 1e-2),
     "hidden_layers": tune.choice([1, 2, 3, 4]),
     "hidden_units": tune.choice([32, 64, 128, 256]),
     "dropout": tune.uniform(0.0, 0.5),
@@ -143,7 +142,7 @@ def _build_mlp(
 
 
 class MLPConfig(
-    ModelConfig[
+    TorchModelConfig[
         MLPHyperParameters,
         MLPRunningConfig,
     ]
@@ -152,11 +151,11 @@ class MLPConfig(
 
     hyperparameters: MLPHyperParameters = Field(
         default_factory=MLPHyperParameters,
-        description="Tuneable hyperparameters (hidden_layers, hidden_units, dropout, activation).",
+        description="Tuneable hyperparameters (learning_rate, hidden_layers, hidden_units, dropout, activation).",
     )
     running_config: MLPRunningConfig = Field(
         default_factory=MLPRunningConfig,
-        description="Execution-time options (learning_rate, epochs, batch_size, random_state, device).",
+        description="Execution-time options (epochs, batch_size, random_state, device).",
     )
     in_ports: dict[str, Port] = Field(
         default={

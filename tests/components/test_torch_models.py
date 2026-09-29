@@ -230,7 +230,7 @@ class TestSaveAndLoad:
 
     @pytest.mark.parametrize("name", NETWORKS)
     def test_params_without_the_network_size_raise(self, name: str) -> None:
-        """NodeML 0.1 saved no network size, so these params cannot load."""
+        """NodeML 0.1.0 saved no network size, so these params cannot load."""
         params = _fitted(name).get_params()
         old_params = {
             "model_state_dict": params["model_state_dict"],
@@ -350,3 +350,71 @@ class TestDevice:
         reborn = _node(name)
         reborn.set_params(node.get_params())
         torch.testing.assert_close(_predict(reborn), pred, rtol=1e-4, atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# Learning rate
+# ---------------------------------------------------------------------------
+
+
+class TestLearningRate:
+    @pytest.mark.parametrize("name", NETWORKS)
+    def test_learning_rate_is_a_hyperparameter(self, name: str) -> None:
+        config = NODE_REGISTRY.get_node_config_class(name)()
+        assert config.hyperparameters.learning_rate == pytest.approx(1e-3)
+        assert "learning_rate" not in type(config.running_config).model_fields
+
+    @pytest.mark.parametrize("name", NETWORKS)
+    def test_hyperparameter_space_has_the_learning_rate(self, name: str) -> None:
+        node_class = NODE_REGISTRY.get_node_class(name)
+        assert "learning_rate" in node_class.hyperparameter_space
+
+    @pytest.mark.parametrize("name", NETWORKS)
+    def test_old_config_with_a_running_learning_rate_loads(self, name: str) -> None:
+        config_class = NODE_REGISTRY.get_node_config_class(name)
+        old_json = config_class().model_dump(mode="json")
+        del old_json["hyperparameters"]["learning_rate"]
+        old_json["running_config"]["learning_rate"] = 0.02
+
+        config = config_class.model_validate(old_json)
+        assert config.hyperparameters.learning_rate == pytest.approx(0.02)
+        assert "learning_rate" not in config.running_config.model_dump()
+
+    @pytest.mark.parametrize("name", NETWORKS)
+    def test_learning_rate_in_both_places_is_rejected(self, name: str) -> None:
+        config_class = NODE_REGISTRY.get_node_config_class(name)
+        with pytest.raises(ValidationError, match="learning_rate"):
+            config_class.model_validate(
+                {
+                    "hyperparameters": {"learning_rate": 0.1},
+                    "running_config": {"learning_rate": 0.2},
+                }
+            )
+
+    @pytest.mark.parametrize("name", NETWORKS)
+    def test_running_config_rejects_the_learning_rate(self, name: str) -> None:
+        running_class = NODE_REGISTRY[name]["running_config"]
+        with pytest.raises(ValidationError, match="hyperparameters.learning_rate"):
+            running_class(learning_rate=0.1)
+
+    @pytest.mark.parametrize("name", NETWORKS)
+    def test_fit_uses_the_learning_rate(self, name: str) -> None:
+        X_pair, y_pair = _pairs()
+        slow = _node(name, {"learning_rate": 1e-4})
+        fast = _node(name, {"learning_rate": 1e-1})
+        slow.fit(_tensor_inputs(X_pair, y_pair))
+        fast.fit(_tensor_inputs(X_pair, y_pair))
+        assert not torch.allclose(_predict(slow), _predict(fast))
+
+    @pytest.mark.parametrize("name", NETWORKS)
+    def test_tuner_applies_the_learning_rate(self, name: str) -> None:
+        from nodeml.core.pipeline.tuners.ray_tuner import (
+            RayPipelineTuner,
+            RayPipelineTunerConfig,
+        )
+
+        tuner = RayPipelineTuner(_pipeline(name), config=RayPipelineTunerConfig())
+        assert "model/learning_rate" in tuner.default_hyperparameter_space()
+        new_config = tuner._apply_hyperparameters({"model/learning_rate": 0.05})
+        _, model_config = new_config.nodes["model"]
+        assert model_config.hyperparameters.learning_rate == pytest.approx(0.05)

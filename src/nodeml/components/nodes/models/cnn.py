@@ -29,6 +29,8 @@ from torch import nn
 
 from nodeml.components.nodes.models._torch_base import (
     ACTIVATIONS,
+    TorchHyperParameters,
+    TorchModelConfig,
     TorchModelNode,
     TorchRunningConfig,
 )
@@ -38,11 +40,7 @@ from nodeml.core.common.data.data import (
     DataStructureEnum,
 )
 from nodeml.core.common.enums import NodeExecutionMode
-from nodeml.core.nodes.models.model import (
-    ModelConfig,
-    ModelHyperParameters,
-    ModelMetadata,
-)
+from nodeml.core.nodes.models.model import ModelMetadata
 from nodeml.core.nodes.node import Port
 
 
@@ -58,10 +56,11 @@ class CNNMetadata(ModelMetadata):
     )
 
 
-class CNNHyperParameters(ModelHyperParameters):
+class CNNHyperParameters(TorchHyperParameters):
     """Tuneable hyperparameters for the CNN.
 
-    Controls the convolutional backbone and the aggregation head.
+    Controls the learning rate, the convolutional backbone and the
+    aggregation head.
     """
 
     # --- Convolutional backbone ---
@@ -124,6 +123,7 @@ class CNNRunningConfig(TorchRunningConfig):
 
 
 hyperparameter_space: dict[str, Any] = {
+    "learning_rate": tune.loguniform(1e-4, 1e-2),
     "num_conv_layers": tune.choice([1, 2, 3]),
     "num_filters": tune.choice([16, 32, 64, 128]),
     "kernel_size": tune.choice([3, 5, 7]),
@@ -234,7 +234,7 @@ def _build_cnn(  # noqa: PLR0913 - one argument per architecture setting
 
 
 class CNNConfig(
-    ModelConfig[
+    TorchModelConfig[
         CNNHyperParameters,
         CNNRunningConfig,
     ]
@@ -243,11 +243,11 @@ class CNNConfig(
 
     hyperparameters: CNNHyperParameters = Field(
         default_factory=CNNHyperParameters,
-        description="Tuneable hyperparameters (conv layers, filters, kernel, pooling, FC head, dropout, activation).",
+        description="Tuneable hyperparameters (learning rate, conv layers, filters, kernel, pooling, FC head, dropout, activation).",
     )
     running_config: CNNRunningConfig = Field(
         default_factory=CNNRunningConfig,
-        description="Execution-time options (learning_rate, epochs, batch_size, random_state, device).",
+        description="Execution-time options (epochs, batch_size, random_state, device).",
     )
     in_ports: dict[str, Port] = Field(
         default={

@@ -1,4 +1,4 @@
-name: Tests
+name: Checks
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: tests-${{ github.ref }}
+  group: checks-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -32,3 +32,40 @@ jobs:
 
       - name: Run tests
         run: uv run pytest
+
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      # Keep the ruff version equal to the pre-commit hook version.
+      - name: Lint
+        run: uvx ruff@0.14.2 check .
+
+      - name: Check formatting
+        run: uvx ruff@0.14.2 format --check .
+
+  ty:
+    runs-on: ubuntu-latest
+    # ty is an alpha release and still reports false positives, so this job
+    # reports problems but does not block a merge.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Type check
+        run: uv run ty check src

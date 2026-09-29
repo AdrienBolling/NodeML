@@ -62,9 +62,18 @@ class MetricNodeMetadata(NodeMetadata):
 class MetricNode[D_I, D_C_I, D_O, D_C_O](Node[D_I, D_C_I, D_O, D_C_O]):
     """Node wrapper for an accumulator-style metric in a NodeML Pipeline.
 
-    Metrics follow an **update/compute** pattern: :meth:`update` accumulates
-    state from incoming batches and :meth:`compute` produces the final result.
-    :meth:`node_transform` calls both in sequence.
+    Metrics follow a **reset/update/compute** pattern:
+
+    * :meth:`reset` clears the accumulated state.
+    * :meth:`update` adds one batch of data to the state.
+    * :meth:`compute` returns the result for the state.  It does not
+      clear the state.
+
+    :meth:`node_transform` scores one batch: it calls :meth:`reset`,
+    :meth:`update` and :meth:`compute`, then :meth:`reset` again, also when
+    an error occurs.  Thus each evaluation starts from a clean state.  A
+    batched evaluation can call :meth:`reset` once, :meth:`update` for
+    each batch, and :meth:`compute` at the end.
     """
 
     metadata = MetricNodeMetadata()
@@ -98,6 +107,14 @@ class MetricNode[D_I, D_C_I, D_O, D_C_O](Node[D_I, D_C_I, D_O, D_C_O]):
 
         """
 
+    def reset(self) -> None:
+        """Clear the state that :meth:`update` accumulates.
+
+        The default implementation does nothing, so a stateless metric does
+        not need to implement it.  Override it when :meth:`update` keeps
+        state.
+        """
+
     # --- API convenience ---
 
     @property
@@ -118,7 +135,21 @@ class MetricNode[D_I, D_C_I, D_O, D_C_O](Node[D_I, D_C_I, D_O, D_C_O]):
     def node_transform(
         self, data: dict[str, tuple[D_I, D_C_I]]
     ) -> dict[str, tuple[D_O, D_C_O]]:
-        """Transform with the Metric Node. This method will be called during all phase of the pipeline."""
-        # Metrics typically do not produce output data in the same way as other nodes, so this can be left empty or return an empty dict.
-        self.update(data)
-        return self.compute()
+        """Score one batch of data from a clean state.
+
+        Args:
+            data: Mapping of input port name to ``(data, context)`` tuples.
+
+        Returns:
+            Mapping of output port name to ``(data, context)`` tuples.
+
+        """
+        # Reset before the update: drop the state of earlier calls.
+        self.reset()
+        try:
+            self.update(data)
+            return self.compute()
+        finally:
+            # Reset after the result or an error: no state leaks to the
+            # next evaluation.
+            self.reset()

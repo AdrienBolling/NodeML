@@ -1,13 +1,14 @@
 """Tests for :class:`nodeml.core.nodes.metrics.metric_node.MetricNode`.
 
-The abstract :class:`MetricNode` only defines the ``update`` / ``compute``
-contract.  We exercise it through the :class:`SumCountMetric` shim so that
+The abstract :class:`MetricNode` only defines the ``reset`` / ``update`` /
+``compute`` contract.  We exercise it through the :class:`SumCountMetric` shim so that
 we stay insulated from the concrete torchmetrics-backed implementations.
 """
 
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from nodeml.core.common.data.data import (
     ArrayLikeEnum,
@@ -57,6 +58,65 @@ class TestMetricNodeFlow:
         metric.update(batch_b)
         score, _ = metric.compute()["score"]
         np.testing.assert_array_equal(score, np.array([[8.0]]))
+
+
+def _batch(n_rows: int) -> dict[str, tuple[np.ndarray, TabularDataContext]]:
+    return {
+        "pred": (np.zeros((n_rows, 1)), _ctx(["pred"])),
+        "target": (np.zeros((n_rows, 1)), _ctx(["target"])),
+    }
+
+
+class _FailingComputeMetric(SumCountMetric):
+    """Metric whose compute always fails after a successful update."""
+
+    def compute(self) -> dict:
+        msg = "compute failed"
+        raise RuntimeError(msg)
+
+
+class TestMetricNodeReset:
+    def test_each_node_transform_starts_from_a_clean_state(self) -> None:
+        metric = SumCountMetric(config=SumCountMetricConfig())
+
+        first, _ = metric.node_transform(_batch(4))["score"]
+        second, _ = metric.node_transform(_batch(4))["score"]
+
+        np.testing.assert_array_equal(first, np.array([[4.0]]))
+        np.testing.assert_array_equal(second, np.array([[4.0]]))
+
+    def test_node_transform_drops_earlier_manual_updates(self) -> None:
+        metric = SumCountMetric(config=SumCountMetricConfig())
+        metric.update(_batch(3))
+
+        score, _ = metric.node_transform(_batch(4))["score"]
+
+        np.testing.assert_array_equal(score, np.array([[4.0]]))
+
+    def test_state_is_reset_when_compute_fails(self) -> None:
+        metric = _FailingComputeMetric(config=SumCountMetricConfig())
+
+        with pytest.raises(RuntimeError, match="compute failed"):
+            metric.node_transform(_batch(4))
+
+        assert metric._count == 0
+
+    def test_reset_clears_the_accumulated_state(self) -> None:
+        metric = SumCountMetric(config=SumCountMetricConfig())
+        metric.update(_batch(3))
+
+        metric.reset()
+        metric.update(_batch(2))
+
+        score, _ = metric.compute()["score"]
+        np.testing.assert_array_equal(score, np.array([[2.0]]))
+
+    def test_default_reset_does_nothing(self) -> None:
+        metric = _SuperInitMetric(config=SumCountMetricConfig())
+
+        metric.reset()
+
+        assert metric.node_transform(_batch(2)) == {}
 
 
 class _SuperInitMetric(MetricNode):

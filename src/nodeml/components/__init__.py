@@ -12,6 +12,10 @@ subdirectory with a ``register_nodes()`` function.
 import importlib
 import pkgutil
 
+from nodeml.core.common.logging import Logger
+
+_log = Logger("nodeml.components")
+
 
 def _auto_discovery() -> None:
     """Walk all subpackages and import every ``_register`` module.
@@ -20,14 +24,15 @@ def _auto_discovery() -> None:
     callable that registers its nodes with the global NODE_REGISTRY.
     """
     for module_info in pkgutil.walk_packages(__path__, prefix=__name__ + "."):
-        if module_info.name.endswith("._register"):
-            mod = importlib.import_module(module_info.name)
-            if hasattr(mod, "register_nodes"):
-                met = getattr(mod, "register_nodes")
-                if callable(met):
-                    met()
-                    print(f"Successfully registered nodes from module: {module_info.name}")
-            else:
-                print(f"Warning: Module {module_info.name} does not have a register_nodes function. Skipping registration for this module.")
-
-
+        if not module_info.name.endswith("._register"):
+            continue
+        mod = importlib.import_module(module_info.name)
+        register_nodes = getattr(mod, "register_nodes", None)
+        if callable(register_nodes):
+            register_nodes()
+            _log.debug("Registered nodes", module=module_info.name)
+        else:
+            _log.warning(
+                "Module has no register_nodes() function, skipped",
+                module=module_info.name,
+            )

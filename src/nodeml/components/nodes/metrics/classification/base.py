@@ -92,6 +92,16 @@ class StatScoresRunningConfig(ThresholdRunningConfig):
             "``'weighted'`` weights the per-class scores by class support."
         ),
     )
+    zero_division: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Score to return when the score divides by zero: precision "
+            "without positive predictions, recall without positive labels, "
+            "F1 without both. Defaults to 0."
+        ),
+    )
 
 
 def classification_in_ports(*, accepts_labels: bool = True) -> dict[str, Port]:

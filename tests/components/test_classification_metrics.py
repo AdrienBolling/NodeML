@@ -211,6 +211,30 @@ class TestMulticlass:
 # ---------------------------------------------------------------------------
 
 
+class TestZeroDivision:
+    @pytest.mark.parametrize("name", ["F1Score", "Precision", "Recall"])
+    def test_default_is_zero(self, name: str) -> None:
+        running_class = NODE_REGISTRY.get(name)["running_config"]
+
+        assert running_class().zero_division == 0.0
+
+    @pytest.mark.parametrize("name", ["F1Score", "Precision", "Recall"])
+    @pytest.mark.parametrize("zero_division", [0.0, 1.0])
+    def test_score_without_positives(self, name: str, zero_division: float) -> None:
+        # No positive predictions and no positive labels: every score divides
+        # by zero.
+        pred = np.zeros((N_ROWS, 1))
+        target = np.zeros((N_ROWS, 1), dtype=np.int64)
+
+        score = _score(_node(name, zero_division=zero_division), pred, target)
+
+        reference = LABEL_METRICS[name](
+            target[:, 0], pred[:, 0].astype(int), zero_division=zero_division
+        )
+        assert score == pytest.approx(reference)
+        assert score == zero_division
+
+
 class TestTargets:
     def test_float_labels_are_accepted(self, binary_data) -> None:
         positive, target = binary_data

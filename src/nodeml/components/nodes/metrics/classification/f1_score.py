@@ -48,17 +48,6 @@ class F1ScoreMetadata(MetricNodeMetadata):
 class F1ScoreRunningConfig(StatScoresRunningConfig):
     """Run-time options for the F1Score metric node."""
 
-    zero_division: float = Field(
-        default=0.0,
-        ge=0.0,
-        le=1.0,
-        description=(
-            "Value to return when there is a zero division "
-            "(i.e., all predictions and labels are negative). "
-            "Defaults to 0."
-        ),
-    )
-
 
 class F1ScoreConfig(MetricNodeConfig[F1ScoreRunningConfig]):
     """Full configuration for the F1Score metric node."""

@@ -55,7 +55,9 @@ class PrecisionConfig(MetricNodeConfig[PrecisionRunningConfig]):
 
     running_config: PrecisionRunningConfig = Field(
         default_factory=PrecisionRunningConfig,
-        description="Run-time options (task, num_classes, threshold, average).",
+        description=(
+            "Run-time options (task, num_classes, threshold, average, zero_division)."
+        ),
     )
     in_ports: dict[str, Port] = Field(
         default=classification_in_ports(),
@@ -78,5 +80,6 @@ class PrecisionNode(ClassificationMetricNode):
     metadata = PrecisionMetadata()
     metric_class = TorchPrecision
     score_name = "precision"
+    common_options = ("zero_division",)
     binary_options = ("threshold",)
     multiclass_options = ("num_classes", "average")

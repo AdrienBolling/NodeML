@@ -55,7 +55,9 @@ class RecallConfig(MetricNodeConfig[RecallRunningConfig]):
 
     running_config: RecallRunningConfig = Field(
         default_factory=RecallRunningConfig,
-        description="Run-time options (task, num_classes, threshold, average).",
+        description=(
+            "Run-time options (task, num_classes, threshold, average, zero_division)."
+        ),
     )
     in_ports: dict[str, Port] = Field(
         default=classification_in_ports(),
@@ -78,5 +80,6 @@ class RecallNode(ClassificationMetricNode):
     metadata = RecallMetadata()
     metric_class = TorchRecall
     score_name = "recall"
+    common_options = ("zero_division",)
     binary_options = ("threshold",)
     multiclass_options = ("num_classes", "average")

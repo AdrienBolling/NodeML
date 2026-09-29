@@ -33,20 +33,25 @@ class MetricNodeConfig[R: MetricNodeRunningConfig](NodeConfig):
 
     @model_validator(mode="after")
     def _default_ports_to_eval_only(self) -> "MetricNodeConfig[R]":
-        """Narrow port modes to ``evaluation`` unless the metric opts out.
+        """Make the ports without an explicit mode evaluation-only.
 
-        Metric nodes exist to score a run after the forward pass, so by
-        default their ports should only be walked during evaluation.
-        We only rewrite ports that still carry the :class:`Port` default
-        (``["all"]``) — explicit overrides by the metric author or user
-        are preserved.
+        Metric nodes score a run after the forward pass.  Thus, by default,
+        the runner walks their ports only during evaluation.  A port that
+        sets ``mode`` explicitly (also ``["all"]``) keeps its mode.
+
+        The validator replaces a port with a copy.  It does not change the
+        :class:`Port` object of the caller, which can belong to other
+        configs too.
+
+        Returns:
+            The validated config.
+
         """
-        port_default = [NodeExecutionMode.ALL]
         eval_only = [NodeExecutionMode.EVALUATION]
         for ports in (self.in_ports, self.out_ports):
-            for port in ports.values():
-                if port.mode == port_default:
-                    port.mode = list(eval_only)
+            for name, port in ports.items():
+                if "mode" not in port.model_fields_set:
+                    ports[name] = port.model_copy(update={"mode": list(eval_only)})
         return self
 
 

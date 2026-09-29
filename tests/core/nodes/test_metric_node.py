@@ -9,8 +9,16 @@ from __future__ import annotations
 
 import numpy as np
 
-from nodeml.core.common.data.data import NumericalData, TabularDataContext
+from nodeml.core.common.data.data import (
+    ArrayLikeEnum,
+    DataCategoryEnum,
+    DataStructureEnum,
+    NumericalData,
+    TabularDataContext,
+)
+from nodeml.core.common.enums import NodeExecutionMode
 from nodeml.core.nodes.metrics.metric_node import MetricNode
+from nodeml.core.nodes.node import Port
 from tests.shims.nodes import SumCountMetric, SumCountMetricConfig
 
 
@@ -62,6 +70,54 @@ class _SuperInitMetric(MetricNode):
 
     def compute(self) -> dict:
         return {}
+
+
+def _port(**kwargs: object) -> Port:
+    return Port(
+        arr_type=ArrayLikeEnum.NUMPY,
+        data_structure=DataStructureEnum.TABULAR,
+        data_category=DataCategoryEnum.NUMERICAL,
+        data_shape="batch 1",
+        desc="A port.",
+        **kwargs,
+    )
+
+
+class TestMetricNodeConfigPortModes:
+    def test_default_ports_are_evaluation_only(self) -> None:
+        config = SumCountMetricConfig()
+
+        for port in [*config.in_ports.values(), *config.out_ports.values()]:
+            assert port.mode == [NodeExecutionMode.EVALUATION]
+
+    def test_ports_without_a_mode_become_evaluation_only(self) -> None:
+        config = SumCountMetricConfig(in_ports={"pred": _port(), "target": _port()})
+
+        assert config.in_ports["pred"].mode == [NodeExecutionMode.EVALUATION]
+
+    def test_explicit_all_mode_is_kept(self) -> None:
+        port = _port(mode=[NodeExecutionMode.ALL])
+        config = SumCountMetricConfig(in_ports={"pred": port, "target": _port()})
+
+        assert config.in_ports["pred"].mode == [NodeExecutionMode.ALL]
+        assert config.in_ports["target"].mode == [NodeExecutionMode.EVALUATION]
+
+    def test_caller_port_is_not_changed(self) -> None:
+        shared = _port()
+        SumCountMetricConfig(in_ports={"pred": shared, "target": shared})
+
+        # The same Port object can also belong to another node config.
+        assert shared.mode == [NodeExecutionMode.ALL]
+
+    def test_json_round_trip_keeps_the_modes(self) -> None:
+        port = _port(mode=[NodeExecutionMode.ALL])
+        config = SumCountMetricConfig(in_ports={"pred": port, "target": _port()})
+
+        loaded = SumCountMetricConfig.model_validate_json(config.model_dump_json())
+
+        assert loaded.in_ports["pred"].mode == [NodeExecutionMode.ALL]
+        assert loaded.in_ports["target"].mode == [NodeExecutionMode.EVALUATION]
+        assert loaded.out_ports["score"].mode == [NodeExecutionMode.EVALUATION]
 
 
 class TestMetricNodeInit:

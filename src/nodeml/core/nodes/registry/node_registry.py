@@ -43,8 +43,9 @@ class NodeRegistry(Registry):
             hyperparameters_class: The class of the node's hyperparameters to register.
 
         """
-        # Extract node_type from the config class defaults.
-        node_type = str(node_config_class().node_type)
+        # Read node_type from the field default; do not build a config,
+        # because a config class can have required fields.
+        node_type = str(node_config_class.model_fields["node_type"].default)
 
         self._register(
             name=name,
@@ -67,8 +68,11 @@ class NodeRegistry(Registry):
         Returns:
             The configuration class for the registered node.
 
+        Raises:
+            RegistryError: If *name* is not registered.
+
         """
-        return self._registry[name]["node_config_class"]
+        return self.get(name)["node_config_class"]
 
     def get_node_class(self, name: str) -> type[Node]:
         """Get the class for a registered node.
@@ -79,8 +83,11 @@ class NodeRegistry(Registry):
         Returns:
             The class for the registered node.
 
+        Raises:
+            RegistryError: If *name* is not registered.
+
         """
-        return self._registry[name]["node_class"]
+        return self.get(name)["node_class"]
 
 
 NODE_REGISTRY = NodeRegistry()

@@ -7,6 +7,7 @@ widgets) is provided by :class:`~nodeml.core.common.registry_display.RegistryDis
 from collections.abc import ItemsView, Iterator
 from typing import Any
 
+from nodeml.core.common.exceptions import RegistryError
 from nodeml.core.common.registry_display import RegistryDisplayMixin
 
 
@@ -47,7 +48,7 @@ class Registry(RegistryDisplayMixin):
             **extra_fields: Arbitrary extra metadata stored alongside the entry.
 
         Raises:
-            ValueError: If *name* is already registered.
+            RegistryError: If *name* is already registered.
 
         Example:
             registry._register(
@@ -65,7 +66,7 @@ class Registry(RegistryDisplayMixin):
                 f"{self._entity.capitalize()} '{name}' is already registered. Please choose a different "
                 f"name or unregister the existing entry first."
             )
-            raise ValueError(message)
+            raise RegistryError(message)
 
         self._registry[name] = {
             f"{self._entity}_class": class_callable,
@@ -91,7 +92,7 @@ class Registry(RegistryDisplayMixin):
                 f"{self._entity.capitalize()} '{name}' is already registered. Please choose a different "
                 f"name or unregister the existing {self._entity} first."
             )
-            raise ValueError(message)
+            raise RegistryError(message)
 
         self._registry[name] = dict(fields)
 
@@ -102,12 +103,12 @@ class Registry(RegistryDisplayMixin):
             name: The name of the entry to remove.
 
         Raises:
-            ValueError: If *name* is not currently registered.
+            RegistryError: If *name* is not currently registered.
 
         """
         if name not in self._registry:
             message = f"{self._entity.capitalize()} '{name}' is not registered. Cannot unregister a non-existent {self._entity}."
-            raise ValueError(message)
+            raise RegistryError(message)
         del self._registry[name]
 
     def get(self, name: str) -> dict[str, Any]:
@@ -120,12 +121,12 @@ class Registry(RegistryDisplayMixin):
             A dictionary of all fields stored for the entry.
 
         Raises:
-            ValueError: If *name* is not registered.
+            RegistryError: If *name* is not registered.
 
         """
         if name not in self._registry:
             message = f"{self._entity.capitalize()} '{name}' is not registered. Please register the {self._entity} before trying to retrieve it."
-            raise ValueError(message)
+            raise RegistryError(message)
         return self._registry[name]
 
     def __getitem__(self, name: str) -> dict[str, Any]:

@@ -1,35 +1,38 @@
 [project]
 name = "nodeml"
 version = "0.1.0"
-description = "Add your description here"
+description = "Build, train, tune and serve ML pipelines as typed DAGs of nodes."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+  "beartype>=0.22.9",
+  "fastapi>=0.115",
+  "ipywidgets>=8.1",
   "jaxtyping>=0.3.3",
+  "mlflow>=3.10.1",
+  "networkx>=3.4",
   "pandas>=2.3.3",
-  "psycopg2-binary>=2.9.11",
+  "plotly>=6.6.0",
   "pyarrow>=21.0.0",
   "pydantic>=2.12.2",
   "pydantic-settings>=2.12.0",
   "ray[all]>=2.50.0",
-  "torch>=2.9.0",
-  "frozendict>=2.4.7",
-  "iplotx>=1.7.1",
-  "igraph>=1.0.0",
-  "torchmetrics>=1.9.0",
-  "mplcursors>=0.7.1",
-  "ipympl>=0.10.0",
-  "typeguard>=4.5.1",
-  "jupyter>=1.1.1",
-  "beartype>=0.22.9",
   "scikit-learn>=1.8.0",
-  "mlflow>=3.10.1",
-  "plotly>=6.6.0",
+  "scipy>=1.15",
+  "torch>=2.9.0",
+  "torchmetrics>=1.9.0",
   "tqdm>=4.66",
 ]
 
+[build-system]
+requires = ["uv_build>=0.9.5,<0.13"]
+build-backend = "uv_build"
+
 [dependency-groups]
 dev = [
+    "ipympl>=0.10.0",
+    "jupyter>=1.1.1",
+    "nbstripout>=0.8.1",
     "pandas-stubs>=3.0.0.260204",
     "pre-commit>=4.3.0",
     "pytest>=9.0.3",
@@ -42,6 +45,10 @@ docs = [
     "sphinx-rtd-theme>=3.0",
     "sphinx-autodoc-typehints>=2.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
 
 [tool.ruff.lint]
 select = [

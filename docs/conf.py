@@ -1,11 +1,5 @@
 """Sphinx configuration for NodeML documentation."""
 
-import os
-import sys
-
-# Add the source directory to the path so autodoc can find the package
-sys.path.insert(0, os.path.abspath("../src"))
-
 # -- Project information -----------------------------------------------------
 
 project = "NodeML"

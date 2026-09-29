@@ -1,0 +1,1 @@
+"""Sink node base class."""

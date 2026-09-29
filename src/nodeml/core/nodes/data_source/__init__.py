@@ -1,1 +1,1 @@
-"""Source nodes for the NodeML Framework."""
+"""Data source base classes."""

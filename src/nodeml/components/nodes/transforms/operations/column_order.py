@@ -34,20 +34,21 @@ Enforcement semantics
 Let *order* be the list returned by mode resolution above.
 
 * **Missing columns** (in *order* but not in the input DataFrame) always
-  raise ``ValueError``, regardless of the ``strict`` flag.
+  raise ``NodeInputError`` (a ``ValueError``), regardless of the ``strict``
+  flag.
 * **Extra columns** (in the input DataFrame but not in *order*) are
   handled according to ``running_config.strict``:
 
   - ``strict=False`` (default): dropped from both the output DataFrame
     and the output :class:`TabularDataContext`.
-  - ``strict=True``: trigger ``ValueError`` — the input must contain
+  - ``strict=True``: trigger ``NodeInputError`` — the input must contain
     exactly the columns of *order*.
 
 * **Column order of the output** is exactly *order*, in that order —
   this is the whole point of the node.
-* **Context consistency** — the output ``TabularDataContext`` has any
-  dropped columns removed so that ``columns``, ``dtypes``, and
-  ``categories`` remain aligned with the output DataFrame.
+* **Context consistency** — the output ``TabularDataContext`` is the
+  input context selected by name in *order*, so that ``columns``,
+  ``dtypes`` and ``categories`` stay aligned with the output DataFrame.
 
 Serialisation
 -------------
@@ -56,9 +57,6 @@ learned mode the stored list is what ``fit`` captured; in explicit mode
 it mirrors the running-config list. The node is safe to checkpoint and
 restore via the standard pipeline param save/load path.
 """
-
-from copy import deepcopy
-from typing import Any, cast
 
 import pandas as pd
 from pydantic import Field
@@ -69,6 +67,7 @@ from nodeml.core.common.data.data import (
     DataStructureEnum,
     TabularDataContext,
 )
+from nodeml.core.common.exceptions import NodeInputError
 from nodeml.core.nodes.node import Port
 from nodeml.core.nodes.transform.transform import (
     TransformConfig,
@@ -111,7 +110,7 @@ class ColumnOrderRunningConfig(TransformRunningConfig):
         default=False,
         description=(
             "When ``True``, the input DataFrame must contain exactly the "
-            "columns of the enforced order — extras trigger a ``ValueError``. "
+            "columns of the enforced order — extras trigger a ``NodeInputError``. "
             "When ``False`` (default), extra columns are silently dropped "
             "from the output. Missing columns always raise regardless of "
             "this flag."
@@ -125,8 +124,8 @@ class ColumnOrderHyperParameters(TransformHyperParameters):
 
 class ColumnOrderConfig(
     TransformConfig[
-        ColumnOrderRunningConfig,
         ColumnOrderHyperParameters,
+        ColumnOrderRunningConfig,
     ]
 ):
     """Full configuration for the ColumnOrder node."""
@@ -182,8 +181,8 @@ class ColumnOrder(
 
     See the module docstring for a full description of the behaviour.
 
-    Summary of modes
-    ----------------
+    Modes:
+
     * **Explicit** — ``running_config.column_order`` is a list: that list
       is enforced on every transform; fit only mirrors it into params.
     * **Learned** — ``running_config.column_order`` is ``None``: fit
@@ -191,46 +190,47 @@ class ColumnOrder(
 
     The running config always wins over learned params when both are set.
 
-    Summary of enforcement
-    ----------------------
+    Enforcement:
+
     * Missing columns (in the target order but not in the input):
-      always raise ``ValueError``.
+      always raise ``NodeInputError``.
     * Extra columns (in the input but not in the target order):
 
       - ``strict=False`` (default): dropped from the output DataFrame
         and context.
-      - ``strict=True``: raise ``ValueError``.
+      - ``strict=True``: raise ``NodeInputError``.
 
     The output DataFrame always has exactly the columns of the target
-    order, in that order, and the output context is kept consistent.
+    order, in that order.  The output context has the same columns, in
+    the same order.
 
-    Examples
-    --------
-    Explicit mode — enforce a fixed schema regardless of input order::
+    Examples:
+        Explicit mode — enforce a fixed schema regardless of input order::
 
-        cfg = ColumnOrderConfig(
-            running_config=ColumnOrderRunningConfig(
-                column_order=["a", "b", "c"],
-            ),
-        )
-        node = ColumnOrder(config=cfg)
+            cfg = ColumnOrderConfig(
+                running_config=ColumnOrderRunningConfig(
+                    column_order=["a", "b", "c"],
+                ),
+            )
+            node = ColumnOrder(config=cfg)
 
-    Learned mode — pin the training-time schema and replay at inference::
+        Learned mode — pin the training-time schema and replay it at
+        inference::
 
-        cfg = ColumnOrderConfig()  # column_order=None, strict=False
-        node = ColumnOrder(config=cfg)
-        node.fit({"input": (train_df, train_ctx)})
-        # subsequent transform() calls return DataFrames whose columns
-        # match train_df.columns in order.
+            cfg = ColumnOrderConfig()  # column_order=None, strict=False
+            node = ColumnOrder(config=cfg)
+            node.fit({"input": (train_df, train_ctx)})
+            # Later transform() calls return DataFrames whose columns
+            # match train_df.columns in order.
 
-    Strict mode — fail fast on unexpected columns::
+        Strict mode — fail fast on unexpected columns::
 
-        cfg = ColumnOrderConfig(
-            running_config=ColumnOrderRunningConfig(
-                column_order=["a", "b", "c"],
-                strict=True,
-            ),
-        )
+            cfg = ColumnOrderConfig(
+                running_config=ColumnOrderRunningConfig(
+                    column_order=["a", "b", "c"],
+                    strict=True,
+                ),
+            )
 
     """
 
@@ -247,23 +247,15 @@ class ColumnOrder(
     def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
         """Record the column order to enforce at transform time.
 
-        Behaviour depends on the running config:
+        * If ``column_order`` is set, the params mirror that list.  ``fit``
+          does not read the input column order.  Thus ``get_params``
+          returns the order that transform applies.
+        * If ``column_order`` is ``None``, the params capture the column
+          order of the input DataFrame, to replay it on later transforms.
 
-        * If ``column_order`` is set, the params mirror that list —
-          ``fit`` does not inspect the input's own column order. This
-          keeps ``get_params`` returning the order that is actually
-          applied regardless of the input seen at fit time.
-        * If ``column_order`` is ``None``, the params capture the input
-          DataFrame's column order (``df.columns``) as the order to
-          replay on future transforms.
-
-        Parameters
-        ----------
-        data:
-            Must contain key ``"input"`` (the DataFrame whose column
-            order should be captured in learned mode). Only the
-            DataFrame's columns attribute is read in learned mode; the
-            data payload and context are otherwise ignored.
+        Args:
+            data: Must contain the key ``"input"``.  In learned mode, only
+                the column labels of the DataFrame are read.
 
         """
         df, _ = data["input"]
@@ -278,38 +270,27 @@ class ColumnOrder(
     ) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
         """Reorder the DataFrame columns to match the enforced order.
 
-        Resolution of the target order: the running-config
-        ``column_order`` wins if set, else the params captured at fit
-        time are used. Then:
+        The running-config ``column_order`` wins if it is set.  Else the
+        order captured at fit time applies.  Then:
 
-        1. Any column in the target order that is missing from the
-           input raises ``ValueError``.
-        2. Any extra column in the input is checked against the
-           ``strict`` flag — ``strict=True`` raises, ``strict=False``
-           drops it silently.
-        3. The output DataFrame is ``df[target_order]`` (exactly the
-           target order, in that order).
-        4. The output context is a deep copy of the input context with
-           the dropped columns removed so that its ``columns``,
-           ``dtypes`` and ``categories`` stay aligned with the output
-           DataFrame.
+        1. A column of the target order that is missing from the input
+           raises ``NodeInputError``.
+        2. An extra input column raises ``NodeInputError`` when
+           ``strict=True``, and is dropped when ``strict=False``.
+        3. The output DataFrame is ``df[target_order]``.
+        4. The output context is ``ctx.select(target_order)``: the input
+           context with the same columns, in the same order.
 
-        Parameters
-        ----------
-        data:
-            Must contain key ``"input"``.
+        Args:
+            data: Must contain the key ``"input"``.
 
-        Returns
-        -------
-        dict
+        Returns:
             ``{"output": (reordered_df, reordered_ctx)}``.
 
-        Raises
-        ------
-        ValueError
-            If the input is missing any column from the target order,
-            or (when ``strict=True``) contains any column not in the
-            target order.
+        Raises:
+            NodeInputError: If the input does not have a column of the
+                target order, or (when ``strict=True``) has a column that is
+                not in the target order.
 
         """
         df, ctx = data["input"]
@@ -322,7 +303,7 @@ class ColumnOrder(
                 f"ColumnOrder: input DataFrame is missing required columns "
                 f"{missing}. Present columns: {list(df.columns)}."
             )
-            raise ValueError(msg)
+            raise NodeInputError(msg)
 
         extras = [c for c in df.columns if c not in order_set]
         if extras and self._config.running_config.strict:
@@ -330,18 +311,26 @@ class ColumnOrder(
                 f"ColumnOrder(strict=True): input DataFrame has unexpected "
                 f"columns {extras}. Enforced order: {order}."
             )
-            raise ValueError(msg)
+            raise NodeInputError(msg)
 
-        out_ctx = deepcopy(ctx)
-        out_ctx.remove_columns(extras)
-        return {"output": (cast("pd.DataFrame", df[order]), out_ctx)}
+        return {"output": (df[order], ctx.select(order))}
 
     def get_params(self) -> _ColumnOrderParams:
-        """Return the enforced column order."""
+        """Return the enforced column order.
+
+        Returns:
+            ``{"column_order": [...]}``.
+
+        """
         return self._params
 
     def set_params(self, params: _ColumnOrderParams) -> None:
-        """Restore a previously captured column order (checkpointing)."""
+        """Restore the column order returned by :meth:`get_params`.
+
+        Args:
+            params: The params of a fitted ColumnOrder node.
+
+        """
         self._params = params
         self._fitted = True
 
@@ -358,7 +347,3 @@ class ColumnOrder(
         if configured is not None:
             return list(configured)
         return list(self._params["column_order"])
-
-
-# No hyperparameters to tune; exposed as an empty dict for consistency.
-hyperparameter_space: dict[str, Any] = {}

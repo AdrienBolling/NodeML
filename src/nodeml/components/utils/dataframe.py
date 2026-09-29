@@ -36,6 +36,37 @@ def filter_columns(
     return data[requested_columns]
 
 
+def fill_missing(series: pd.Series, value: object, *, fallback_dtype: str) -> pd.Series:
+    """Fill the missing values of *series* with *value*, and keep the dtype.
+
+    * A pandas ``Categorical`` column gets *value* as a new category when
+      it is not one of its categories.
+    * When *value* does not fit the dtype (for example, ``2.5`` in an
+      ``Int64`` column), the column is cast to *fallback_dtype* first.
+
+    Args:
+        series: The column to fill.
+        value: The fill value.
+        fallback_dtype: The dtype to use when *value* does not fit the dtype
+            of *series* (for example ``"float64"`` or ``"object"``).
+
+    Returns:
+        The filled column.  It is *series* itself when no value is missing.
+
+    """
+    if not series.isna().any():
+        return series
+    if isinstance(series.dtype, pd.CategoricalDtype):
+        if value not in series.cat.categories:
+            series = series.cat.add_categories([value])
+        return series.fillna(value)
+    try:
+        return series.fillna(value)
+    except (TypeError, ValueError):
+        # The value does not fit the dtype, for example 2.5 in Int64.
+        return series.astype(fallback_dtype).fillna(value)
+
+
 def check_fitted_columns(
     fitted: Iterable[object],
     columns: Iterable[object],

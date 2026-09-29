@@ -15,8 +15,17 @@ import pandas as pd
 import pytest
 
 from nodeml.components.nodes.models._sklearn_base import SklearnModelNode
-from nodeml.core.common.data.data import NumericalData, TabularDataContext
-from nodeml.core.common.exceptions import NodeInputError, NodeNotFittedError
+from nodeml.core.common.data.data import (
+    CategoricalData,
+    DataCategoryEnum,
+    NumericalData,
+    TabularDataContext,
+)
+from nodeml.core.common.exceptions import (
+    DataTypeError,
+    NodeInputError,
+    NodeNotFittedError,
+)
 from nodeml.core.nodes.models.model import ModelConfig
 from nodeml.core.nodes.registry.node_registry import NODE_REGISTRY
 from nodeml.core.pipeline.pipeline import Pipeline
@@ -205,6 +214,32 @@ class TestSingleTargetModels:
             node.fit(
                 _numpy_inputs((X, numerical_context(X)), (y, numerical_context(y)))
             )
+
+
+# ---------------------------------------------------------------------------
+# Ports
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("name", ALL_MODELS)
+def test_feature_port_accepts_only_numerical_data(name: str) -> None:
+    assert _node(name).in_ports["X"].data_category == DataCategoryEnum.NUMERICAL
+
+
+def test_runner_rejects_categorical_features() -> None:
+    """scikit-learn cannot use strings, so the runner must stop them."""
+    X = pd.DataFrame({"a": [1.0, 2.0, 3.0, 4.0], "b": ["u", "v", "u", "v"]})
+    X_ctx = TabularDataContext(
+        columns=["a", "b"],
+        dtypes=list(X.dtypes),
+        categories=[NumericalData, CategoricalData],
+    )
+    y = pd.DataFrame({"t": [1.0, 2.0, 3.0, 4.0]})
+    runner = _runner(_pipeline("LinearRegression"))
+    with pytest.raises(DataTypeError, match="target port 'X'"):
+        runner.train(
+            input_data={"source": {"X": (X, X_ctx), "y": (y, numerical_context(y))}}
+        )
 
 
 # ---------------------------------------------------------------------------

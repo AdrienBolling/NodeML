@@ -4,7 +4,7 @@ Wraps ``sklearn.ensemble.GradientBoostingRegressor`` and exposes it as a NodeML
 :class:`~nodeml.core.nodes.models.model.Model` node.  The node expects two
 input ports:
 
-* ``X`` - feature matrix ``(batch, features)`` as a numpy array
+* ``X`` - numerical feature matrix ``(batch, features)`` as a numpy array
 * ``y`` - one target column ``(batch, 1)`` as a numpy array (training / evaluation only)
 
 and emits one output port:
@@ -150,9 +150,9 @@ class GradientBoostingRegressorConfig(
             "X": Port(
                 arr_type=ArrayLikeEnum.NUMPY,
                 data_structure=DataStructureEnum.TABULAR,
-                data_category=DataCategoryEnum.MIXED,
+                data_category=DataCategoryEnum.NUMERICAL,
                 data_shape="batch features",
-                desc="Input feature matrix (batch, features).",
+                desc="Numerical input feature matrix (batch, features).",
             ),
             "y": Port(
                 arr_type=ArrayLikeEnum.NUMPY,

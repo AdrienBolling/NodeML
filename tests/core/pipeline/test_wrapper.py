@@ -64,3 +64,26 @@ class TestWrapperDelegation:
         outer = _IdentityWrapper(inner)
 
         assert outer.unwrapped is runner
+
+
+class TestWrapperPersistence:
+    def test_save_load_and_metric_names_delegate(
+        self, tmp_path, regression_dataset
+    ) -> None:
+        X_pair, y_pair, _ = regression_dataset
+        pipeline = build_source_model_sink_pipeline(with_metric=True)
+        wrapper = _IdentityWrapper(SmartRunner(pipeline))
+        wrapper.train(input_data={"source": {"X": X_pair, "y": y_pair}})
+
+        assert wrapper.get_metric_node_names() == ["metric"]
+        wrapper.save_params_to_dir(tmp_path)
+        wrapper.load_params_from_dir(tmp_path)
+        assert any(tmp_path.glob("*_params.pkl"))
+
+    def test_wrappers_can_be_stacked(self) -> None:
+        pipeline = build_source_model_sink_pipeline()
+        inner = _IdentityWrapper(SmartRunner(pipeline))
+        outer = _IdentityWrapper(inner)
+        assert outer.pipeline is pipeline
+        assert outer.unwrapped is inner.unwrapped
+        assert outer.get_metric_node_names() == []

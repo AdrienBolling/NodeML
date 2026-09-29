@@ -28,7 +28,7 @@ jobs:
         run: uv python install 3.13
 
       - name: Install dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --extra counterfactuals
 
       - name: Run tests
         run: uv run pytest
@@ -65,7 +65,7 @@ jobs:
         run: uv python install 3.13
 
       - name: Install dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --extra counterfactuals
 
       - name: Type check
         run: uv run ty check src

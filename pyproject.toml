@@ -24,6 +24,14 @@ dependencies = [
   "tqdm>=4.66",
 ]
 
+[project.optional-dependencies]
+# Counterfactual explanations with CELIA. CELIA and some of its own
+# dependencies install from git only, so PyPI does not accept them; keep them
+# in an extra. The "stochastic" extra of CELIA (FastAR) conflicts with ray[all].
+counterfactuals = [
+  "celia @ git+https://github.com/serval-uni-lu/celia.git@0b95d40571603df5f2ba696b4bdb8fd7f2fe3872",
+]
+
 [build-system]
 requires = ["uv_build>=0.9.5,<0.13"]
 build-backend = "uv_build"

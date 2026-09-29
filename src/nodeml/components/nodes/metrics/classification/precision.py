@@ -4,8 +4,9 @@ Wraps ``torchmetrics.Precision`` and exposes it as a NodeML
 :class:`~nodeml.core.nodes.metrics.metric_node.MetricNode`.  The node expects
 two input ports:
 
-* ``pred``   - predicted class probabilities or logits ``(batch, num_classes)``
-               as a numpy array (for multiclass), or ``(batch, 1)`` for binary
+* ``pred``   - class probabilities ``(batch, num_classes)`` (also for binary),
+               positive-class probabilities ``(batch, 1)`` (binary only), or
+               hard class labels ``(batch, 1)``
 * ``target`` - ground-truth class labels ``(batch, 1)`` as a numpy integer array
 
 and emits one output port:

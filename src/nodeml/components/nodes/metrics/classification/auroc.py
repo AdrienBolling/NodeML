@@ -4,8 +4,8 @@ Wraps ``torchmetrics.AUROC`` and exposes it as a NodeML
 :class:`~nodeml.core.nodes.metrics.metric_node.MetricNode`.  The node expects
 two input ports:
 
-* ``pred``   - predicted class probabilities or logits ``(batch, num_classes)``
-               as a numpy array (for multiclass), or ``(batch, 1)`` for binary
+* ``pred``   - class probabilities ``(batch, num_classes)`` (also for binary),
+               or positive-class probabilities ``(batch, 1)`` (binary only)
 * ``target`` - ground-truth class labels ``(batch, 1)`` as a numpy integer array
 
 and emits one output port:
@@ -77,7 +77,7 @@ class AUROCConfig(MetricNodeConfig[AUROCRunningConfig]):
         description="Run-time options (task, num_classes, average, max_fpr).",
     )
     in_ports: dict[str, Port] = Field(
-        default=classification_in_ports(),
+        default=classification_in_ports(accepts_labels=False),
         description="Input ports: 'pred' (class probabilities) and 'target' (class labels).",
     )
     out_ports: dict[str, Port] = Field(
@@ -99,3 +99,4 @@ class AUROCNode(ClassificationMetricNode):
     score_name = "auroc"
     binary_options = ("max_fpr",)
     multiclass_options = ("num_classes", "average")
+    accepts_labels = False

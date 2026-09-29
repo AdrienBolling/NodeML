@@ -71,13 +71,3 @@ class AcceptsInputsSourceNode(Protocol):
     """Protocol for source nodes that have an 'accepts_inputs' attribute to indicate whether they can accept inputs from other nodes (i.e., are not pure data sources)."""
 
     accepts_inputs: bool
-
-
-# --------------
-# is_valid_torch_module Protocols
-class IsValidTorchModule(Protocol):
-    """Protocol for objects that can be checked for being a valid PyTorch module."""
-
-    def train_module(self, data: Any) -> None:
-        """Train the module on *data*."""
-        ...

@@ -161,6 +161,13 @@ class FeatureConcatenate(
         )
         return {"output": (concatenated, output_ctx)}
 
+    def get_params(self) -> None:
+        """Return ``None``: the node has no learned parameters."""
+        return
+
+    def set_params(self, params: None) -> None:
+        """Do nothing: the node has no learned parameters."""
+
     # --- Private helpers --------------------------------------------------
 
     def _assert_inputs_valid(self, df1: pd.DataFrame, df2: pd.DataFrame) -> None:

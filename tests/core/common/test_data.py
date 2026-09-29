@@ -211,3 +211,76 @@ class TestCategoryMappings:
         assert ArrayLikeEnum.PANDAS == "pd.DataFrame"
         assert ArrayLikeEnum.NUMPY == "np.ndarray"
         assert ArrayLikeEnum.TORCH == "torch.Tensor"
+
+
+# ---------------------------------------------------------------------------
+# Context drift protection
+# ---------------------------------------------------------------------------
+
+
+def _ctx() -> TabularDataContext:
+    return TabularDataContext(
+        columns=["a", "b", "c"],
+        dtypes=[np.dtype("float64"), np.dtype("object"), np.dtype("int64")],
+        categories=[NumericalData, CategoricalData, NumericalData],
+    )
+
+
+class TestContextDrift:
+    def test_lists_of_different_lengths_are_rejected(self) -> None:
+        from nodeml.core.common.exceptions import DataContextError
+
+        with pytest.raises(DataContextError, match="same length"):
+            TabularDataContext(columns=["a"], dtypes=[], categories=[NumericalData])
+
+    def test_select_reorders_all_three_lists(self) -> None:
+        selected = _ctx().select(["c", "a"])
+        assert selected.columns == ["c", "a"]
+        assert selected.dtypes == [np.dtype("int64"), np.dtype("float64")]
+        assert selected.categories == [NumericalData, NumericalData]
+
+    def test_select_unknown_column_raises(self) -> None:
+        from nodeml.core.common.exceptions import DataContextError
+
+        with pytest.raises(DataContextError, match="not in the context"):
+            _ctx().select(["missing"])
+
+    def test_aligned_to_follows_the_dataframe(self) -> None:
+        df = pd.DataFrame({"b": ["x"], "a": [1.0], "new": ["y"]})
+        aligned = _ctx().aligned_to(df)
+        assert aligned.columns == ["b", "a", "new"]
+        assert aligned.categories == [CategoricalData, NumericalData, CategoricalData]
+        assert aligned.dtypes == list(df.dtypes)
+
+    def test_copy_does_not_share_lists(self) -> None:
+        ctx = _ctx()
+        copied = ctx.copy()
+        copied.remove_columns(["a"])
+        assert ctx.columns == ["a", "b", "c"]
+
+    def test_tabular_data_rejects_context_in_another_column_order(self) -> None:
+        from nodeml.core.common.exceptions import DataContextError
+
+        df = pd.DataFrame({"a": [1.0], "b": ["x"], "c": [1]})
+        ctx = _ctx().select(["b", "a", "c"])
+        with pytest.raises(DataContextError, match="does not match the data columns"):
+            TabularData(df, ctx.columns, ctx.dtypes, ctx.categories)
+
+    def test_tabular_data_takes_dtypes_from_the_dataframe(self) -> None:
+        df = pd.DataFrame({"a": [1.0], "b": ["x"], "c": [1]})
+        stale = _ctx()
+        stale.dtypes = [np.dtype("int8")] * 3
+        _, ctx = TabularData(
+            df, stale.columns, stale.dtypes, stale.categories
+        ).to_pandas()
+        assert ctx.dtypes == list(df.dtypes)
+
+    def test_dict_dump_round_trips_categorical_dtypes(self) -> None:
+        df = pd.DataFrame({"cat": pd.Categorical(["x", "y"]), "num": [1.0, 2.0]})
+        ctx = TabularDataContext(
+            columns=list(df.columns),
+            dtypes=list(df.dtypes),
+            categories=[CategoricalData, NumericalData],
+        )
+        restored = tabular_context_from_dict_dump(ctx.dump_dict)
+        assert [str(d) for d in restored.dtypes] == ["category", "float64"]

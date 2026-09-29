@@ -1,14 +1,13 @@
 """Define the base DataSource class for the NodeML Framework."""
 
 from abc import ABC, abstractmethod
-from typing import TypeVar
 
 from pydantic import BaseModel
 
-from nodeml.core.nodes.node import Node, NodeConfig, NodeType
+from nodeml.core.nodes.node import Node, NodeConfig, NodeMetadata, NodeType
 
 
-class DataSourceMetadata(BaseModel):
+class DataSourceMetadata(NodeMetadata):
     """Metadata for a DataSource node."""
 
     _node_type: NodeType = NodeType.SOURCE
@@ -22,10 +21,7 @@ class DataSourceRunningConfig(BaseModel):
     """
 
 
-R = TypeVar("R", bound=DataSourceRunningConfig)
-
-
-class DataSourceConfig[R](NodeConfig):
+class DataSourceConfig[R: DataSourceRunningConfig](NodeConfig):
     """Configuration for all DataSource nodes in the NodeML Framework.
 
     Generic over ``R``, which must be a :class:`DataSourceRunningConfig`

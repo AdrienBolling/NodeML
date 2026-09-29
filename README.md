@@ -7,7 +7,8 @@ A Python framework for building, training, and deploying **ML pipelines as direc
 - **Pipeline = DAG.** Nodes declare typed input/output ports; edges wire them together. The framework resolves execution order via topological sort.
 - **Mode-aware execution.** Ports carry an execution mode (`training`, `inference`, `evaluation`, or `all`). During inference the runner automatically skips target-only branches; during evaluation it walks metric nodes.
 - **Registry-driven.** All built-in nodes self-register at import time. Discover them with `NODE_REGISTRY.list()`, retrieve configs with `NODE_REGISTRY.get_node_config_class(...)`.
-- **Save / load.** A trained pipeline is fully captured by a JSON config and a pickle of fitted parameters — `save_config_to_dir`, `save_params_to_dir`, `load_params_from_dir`.
+- **Save / load.** A trained pipeline is fully captured by a JSON config and a pickle of fitted parameters — `save_config_to_dir`, `save_params_to_dir`, then `Pipeline.load_from_dir` to rebuild, compile and load it.
+- **One Sink.** Send every output you need to the Sink node with an edge. Compilation creates the Sink ports from these edges, in edge order.
 
 ## Built-in nodes
 

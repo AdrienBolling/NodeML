@@ -4,7 +4,7 @@ import uuid
 from abc import ABC, ABCMeta, abstractmethod
 from enum import StrEnum
 from functools import wraps
-from typing import Any, ParamSpec, override
+from typing import Any, override
 
 from pydantic import BaseModel, PrivateAttr
 
@@ -15,8 +15,6 @@ from nodeml.core.common.data.data import (
 )
 from nodeml.core.common.enums import NodeExecutionMode
 from nodeml.core.common.mixins.mixin import MixinSettings
-
-P = ParamSpec("P")
 
 
 class NodeMetadata(BaseModel):
@@ -162,6 +160,8 @@ class Node[D_I, D_C_I, D_O, D_C_O](ABC, metaclass=MetaPostInitHook):
 
     _is_node: bool = True
     metadata = NodeMetadata()
+    # Class-level default: subclasses often do not call Node.__init__.
+    _execution_mode: NodeExecutionMode = NodeExecutionMode.DEFAULT
 
     def __init__(self, *, config: NodeConfig) -> None:
         """Initialise the Node with the given configuration.
@@ -170,9 +170,7 @@ class Node[D_I, D_C_I, D_O, D_C_O](ABC, metaclass=MetaPostInitHook):
             config: Node configuration defining ports, type, and mixins.
 
         """
-        if not self._config:
-            self._config = config
-
+        self._config = config
         self._execution_mode = NodeExecutionMode.DEFAULT
 
     @property
@@ -209,7 +207,7 @@ class Node[D_I, D_C_I, D_O, D_C_O](ABC, metaclass=MetaPostInitHook):
         """
         self._execution_mode = mode
 
-    def __init_subclass__(cls, *args: ParamSpec, **kwargs: ParamSpec) -> None:
+    def __init_subclass__(cls, **kwargs: Any) -> None:
         """Validate subclass definition and wrap its ``__init__``.
 
         Wraps ``__init__`` to extract the ``config`` kwarg early and validates
@@ -223,17 +221,20 @@ class Node[D_I, D_C_I, D_O, D_C_O](ABC, metaclass=MetaPostInitHook):
         """
         super().__init_subclass__(**kwargs)
 
-        orig_init = cls.__init__
+        # Wrap only an __init__ that this class defines.  An inherited
+        # __init__ is already wrapped by the parent class.
+        if "__init__" in cls.__dict__:
+            orig_init = cls.__init__
 
-        @wraps(orig_init)
-        def wrapped_init(self: "Node", *args: Any, **kwargs: Any) -> None:
-            if "config" not in kwargs:
-                msg = "config must be passed as a keyword argument"
-                raise TypeError(msg)
-            self._config = kwargs["config"]
-            orig_init(self, *args, **kwargs)
+            @wraps(orig_init)
+            def wrapped_init(self: "Node", *args: Any, **kwargs: Any) -> None:
+                if "config" not in kwargs:
+                    msg = "config must be passed as a keyword argument"
+                    raise TypeError(msg)
+                self._config = kwargs["config"]
+                orig_init(self, *args, **kwargs)
 
-        cls.__init__ = wrapped_init
+            cls.__init__ = wrapped_init
 
         bases = cls.__bases__
         base_idx = None
@@ -249,26 +250,38 @@ class Node[D_I, D_C_I, D_O, D_C_O](ABC, metaclass=MetaPostInitHook):
                 message += f"Use 'class {cls.__name__}({bases[base_idx].__name__}, {base.__name__}):' instead of 'class {cls.__name__}({base.__name__}, {bases[base_idx].__name__}):'."
                 raise TypeError(message)
 
-    def __post_init__(self, *, config: NodeConfig | None = None) -> None:
+    def __post_init__(
+        self, *, config: NodeConfig | None = None, **_kwargs: Any
+    ) -> None:
         """Run common post-initialisation logic for all Nodes.
 
-        Propagates initialisation up the MRO so that Mixin ``__post_init__``
-        methods are called in the correct order.
+        Propagates initialisation up the MRO so that Mixin ``__init__`` and
+        ``__post_init__`` methods run after the node is initialised.
 
         Args:
             config: Optional node configuration forwarded along the MRO chain.
+            **_kwargs: Other ``__init__`` arguments of the subclass.  They are
+                not forwarded to mixins.
 
         """
-        try:
+        # Call the next __init__ in the MRO (a mixin, if any).  object.__init__
+        # takes no arguments, so it gets none.  Errors raised by a mixin are
+        # not hidden.
+        if self._next_init_owner() is object:
+            super().__init__()
+        else:
             super().__init__(config=config)  # type: ignore[call-arg]
-        except TypeError:  # In case we go back to object, object.__init__ doesn't take any argument, so we need to catch the TypeError and call it without arguments
-            super().__init__()  # type: ignore[misc]
-        # If super has a post_init, call it
-        if getattr(
-            super(), "__post_init__", None
-        ):  # INFO: Ignore the error here if pyright raises one, it's being dumb
+        # Mixins can define their own __post_init__.
+        if getattr(super(), "__post_init__", None):
             super().__post_init__(config=config)  # type: ignore[misc]
-            # INFO: Although it may seem useless, it's used in case of multiple inheritance with Mixins and such
+
+    def _next_init_owner(self) -> type:
+        """Return the first class after :class:`Node` in the MRO that defines ``__init__``."""
+        mro = type(self).__mro__
+        for klass in mro[mro.index(Node) + 1 :]:
+            if "__init__" in klass.__dict__:
+                return klass
+        return object
 
     @property
     def id(self) -> uuid.UUID:

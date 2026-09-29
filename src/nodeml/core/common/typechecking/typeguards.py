@@ -2,7 +2,6 @@
 
 from typing import TypeGuard
 
-import torch
 from pydantic import BaseModel
 
 from nodeml.core.common.typechecking.protocols import (
@@ -13,10 +12,16 @@ from nodeml.core.common.typechecking.protocols import (
     HasParamsNode,
     HasRunningConfigConfig,
     HasRunningConfigNode,
-    IsValidTorchModule,
 )
 from nodeml.core.nodes.data_sink.sink import Sink
 from nodeml.core.nodes.node import Node, NodeConfig, NodeType
+
+
+def _is_non_empty_model(value: object) -> bool:
+    """Return ``True`` if *value* is a pydantic model with at least one field."""
+    # model_fields is read from the class: reading it from an instance is
+    # deprecated since pydantic 2.11.
+    return isinstance(value, BaseModel) and len(type(value).model_fields) > 0
 
 
 # has Hyperparameters typeguards
@@ -27,19 +32,11 @@ def has_hyperparameters(obj: Node) -> TypeGuard[HasHyperparametersNode]:
         obj: The node to inspect.
 
     Returns:
-        ``True`` if ``obj.config.hyperparameters`` exists, is a non-empty
-        ``BaseModel``, and has at least one populated field.
+        ``True`` if ``obj.config.hyperparameters`` is a ``BaseModel`` with at
+        least one field.
 
     """
-    hp = getattr(obj.config, "hyperparameters", None)
-    # Check if hp exists and is not None
-    if hp is None:
-        return False
-    # Check if hp is a BaseModel and is not empty
-    if len(hp.model_fields) == 0:
-        return False
-    # If hp is a BaseModel, check if it is not empty by checking if its model_dump() is not empty
-    return not (isinstance(hp, BaseModel) and not hp.model_dump())
+    return has_hyperparameters_config(obj.config)
 
 
 def has_hyperparameters_config(obj: NodeConfig) -> TypeGuard[HasHyperparametersConfig]:
@@ -49,18 +46,11 @@ def has_hyperparameters_config(obj: NodeConfig) -> TypeGuard[HasHyperparametersC
         obj: The node configuration to inspect.
 
     Returns:
-        ``True`` if ``obj.hyperparameters`` is a non-empty ``BaseModel``.
+        ``True`` if ``obj.hyperparameters`` is a ``BaseModel`` with at least
+        one field.
 
     """
-    hp = getattr(obj, "hyperparameters", None)
-    # Check if hp exists and is not None
-    if hp is None:
-        return False
-    # Check if hp is a BaseModel and is not empty
-    if len(hp.model_fields) == 0:
-        return False
-    # If hp is a BaseModel, check if it is not empty by checking if its model_dump() is not empty
-    return isinstance(hp, BaseModel) and bool(hp.model_dump())
+    return _is_non_empty_model(getattr(obj, "hyperparameters", None))
 
 
 # has RunningConfig typeguards
@@ -71,18 +61,11 @@ def has_running_config(obj: Node) -> TypeGuard[HasRunningConfigNode]:
         obj: The node to inspect.
 
     Returns:
-        ``True`` if ``obj.config.running_config`` is a non-empty ``BaseModel``.
+        ``True`` if ``obj.config.running_config`` is a ``BaseModel`` with at
+        least one field.
 
     """
-    rc = getattr(obj.config, "running_config", None)
-    # Check if rc exists and is not None
-    if rc is None:
-        return False
-    # Check if rc is a BaseModel and is not empty
-    if len(rc.model_fields) == 0:
-        return False
-    # If rc is a BaseModel, check if it is not empty by checking if its model_dump() is not empty
-    return isinstance(rc, BaseModel) and bool(rc.model_dump())
+    return has_running_config_config(obj.config)
 
 
 def has_running_config_config(obj: NodeConfig) -> TypeGuard[HasRunningConfigConfig]:
@@ -92,18 +75,11 @@ def has_running_config_config(obj: NodeConfig) -> TypeGuard[HasRunningConfigConf
         obj: The node configuration to inspect.
 
     Returns:
-        ``True`` if ``obj.running_config`` is a non-empty ``BaseModel``.
+        ``True`` if ``obj.running_config`` is a ``BaseModel`` with at least
+        one field.
 
     """
-    rc = getattr(obj, "running_config", None)
-    # Check if rc exists and is not None
-    if rc is None:
-        return False
-    # Check if rc is a BaseModel and is not empty
-    if len(rc.model_fields) == 0:
-        return False
-    # If rc is a BaseModel, check if it is not empty by checking if its model_dump() is not empty
-    return isinstance(rc, BaseModel) and bool(rc.model_dump())
+    return _is_non_empty_model(getattr(obj, "running_config", None))
 
 
 # has Hyperparameter_space typeguards
@@ -184,21 +160,3 @@ def accepts_inputs_source_node(node: Node) -> TypeGuard[AcceptsInputsSourceNode]
     if hasattr(node, "accepts_inputs") and node.config.node_type == NodeType.SOURCE:
         return node.accepts_inputs  # type: ignore[attr-defined]
     return False
-
-
-# is Valid Torch Module typeguard
-def is_valid_torch_module(obj: type) -> TypeGuard[IsValidTorchModule]:
-    """Check whether *obj* is a valid torch.nn.Module with a train_module method.
-
-    Args:
-        obj: The object to inspect.
-
-    Returns:
-        ``True`` if *obj* is a subclass of torch.nn.Module and has a callable train_module method.
-
-    """
-    return (
-        issubclass(obj, torch.nn.Module)
-        and hasattr(obj, "train_module")
-        and callable(obj.train_module)
-    )

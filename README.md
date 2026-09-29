@@ -17,6 +17,7 @@ A Python framework for building, training, and deploying **ML pipelines as direc
 | **Transforms** | `StandardScaler`, `MinMaxScaler`, `RobustScaler`, `OneHotEncoding`, `LabelEncoding`, `IQROutlierFilter`, `ZScoreOutlierFilter`, `NumericalImputation`, `CategoricalImputation`, `CorrelationFilter`, `VarianceFilter`, `MissingRateFilter`, `DataCategoryFilter`, `ColumnOrder`, `FeatureConcatenate`, `RowConcatenate` |
 | **Models** | `LinearRegression`, `RandomForestRegressor`, `RandomForestClassifier`, `GradientBoostingRegressor`, `GradientBoostingClassifier`, `MLP`, `CNN` |
 | **Metrics** | `R2Score`, `MSE`, `MAE`, `MAPE`, `Accuracy`, `AUROC`, `F1Score`, `Precision`, `Recall` |
+| **Sink** | `Sink` |
 
 ## Quick start
 
@@ -65,26 +66,28 @@ preds = runner.infer(input_data={"source": {"X": X_pair}})
 Requires **Python 3.13+**.
 
 ```bash
-git clone git@github.com:AdrienBolling/TimeSeriesUnifiedToolbox.git
-cd TimeSeriesUnifiedToolbox
+git clone git@github.com:AdrienBolling/NodeML.git
+cd NodeML
 uv sync
 ```
 
 ## Contributing
 
 ```bash
-uv sync --dev
-pre-commit install
+uv sync                      # installs the package and the dev group
+uv run pre-commit install    # ruff, ty, uv-lock and nbstripout hooks
 ```
+
+The `nbstripout` hook removes notebook outputs before each commit.
 
 Run the tests:
 
 ```bash
-uv run pytest tests/
+uv run pytest
 ```
 
 Build the docs:
 
 ```bash
-uv run sphinx-build docs docs/_build
+uv run --group docs sphinx-build docs docs/_build
 ```

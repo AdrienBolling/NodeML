@@ -8,6 +8,6 @@ Clone the repository and install with `uv`:
 
 .. code-block:: bash
 
-   git clone git@github.com:AdrienBolling/TimeSeriesUnifiedToolbox.git
-   cd TimeSeriesUnifiedToolbox
+   git clone git@github.com:AdrienBolling/NodeML.git
+   cd NodeML
    uv sync --dev

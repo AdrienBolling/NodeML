@@ -100,24 +100,24 @@ class StandardScaler(
 ):
     """Standardise numerical columns to zero mean and unit variance.
 
-    Example
+    Example:
     -------
     >>> node = StandardScaler(config=StandardScalerConfig())
     >>> out = node.node_fit_transform({"input": (df, ctx)})
+
     """
 
     metadata = StandardScalerMetadata()
 
     def __init__(self, *, config: StandardScalerConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         self._params: _StandardScalerParams = {"mean": {}, "std": {}}
         self._fitted = False
 
     # --- TransformNode interface ------------------------------------------
 
-    def fit(
-        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
-    ) -> None:
+    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
         """Learn per-column mean and standard deviation."""
         df, _ = data["input"]
         means = df.mean()

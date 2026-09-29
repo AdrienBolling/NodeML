@@ -2,6 +2,7 @@
 
 from pydantic import BaseModel
 
+
 class Version(BaseModel):
     """Version information for the NodeML library."""
 

@@ -12,12 +12,18 @@ import pandas as pd
 from pydantic import Field
 
 from nodeml.core.common.data.data import (
-    ArrayLikeEnum, DataCategoryEnum, DataStructureEnum, TabularDataContext,
+    ArrayLikeEnum,
+    DataCategoryEnum,
+    DataStructureEnum,
+    TabularDataContext,
 )
 from nodeml.core.nodes.node import Port
 from nodeml.core.nodes.transform.transform import (
-    TransformConfig, TransformHyperParameters, TransformMetadata,
-    TransformNode, TransformRunningConfig,
+    TransformConfig,
+    TransformHyperParameters,
+    TransformMetadata,
+    TransformNode,
+    TransformRunningConfig,
 )
 
 type _RobustScalerParams = dict[str, dict[str, float]]
@@ -27,7 +33,9 @@ class RobustScalerMetadata(TransformMetadata):
     """Metadata for the RobustScaler node."""
 
     node_name: str = "RobustScaler"
-    description: str = "Scale numerical columns using median and IQR, robust to outliers."
+    description: str = (
+        "Scale numerical columns using median and IQR, robust to outliers."
+    )
     trainable: bool = True
 
 
@@ -39,25 +47,56 @@ class RobustScalerHyperParameters(TransformHyperParameters):
     """No tuneable hyperparameters."""
 
 
-class RobustScalerConfig(TransformConfig[RobustScalerRunningConfig, RobustScalerHyperParameters]):
+class RobustScalerConfig(
+    TransformConfig[RobustScalerRunningConfig, RobustScalerHyperParameters]
+):
     """Configuration for the RobustScaler node."""
 
-    hyperparameters: RobustScalerHyperParameters = Field(default_factory=RobustScalerHyperParameters)
-    running_config: RobustScalerRunningConfig = Field(default_factory=RobustScalerRunningConfig)
+    hyperparameters: RobustScalerHyperParameters = Field(
+        default_factory=RobustScalerHyperParameters
+    )
+    running_config: RobustScalerRunningConfig = Field(
+        default_factory=RobustScalerRunningConfig
+    )
     in_ports: dict[str, Port] = Field(
-        default={"input": Port(arr_type=ArrayLikeEnum.PANDAS, data_structure=DataStructureEnum.TABULAR, data_category=DataCategoryEnum.NUMERICAL, data_shape="batch feature", desc="Numerical DataFrame to scale.")},
+        default={
+            "input": Port(
+                arr_type=ArrayLikeEnum.PANDAS,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.NUMERICAL,
+                data_shape="batch feature",
+                desc="Numerical DataFrame to scale.",
+            )
+        },
     )
     out_ports: dict[str, Port] = Field(
-        default={"output": Port(arr_type=ArrayLikeEnum.PANDAS, data_structure=DataStructureEnum.TABULAR, data_category=DataCategoryEnum.NUMERICAL, data_shape="batch feature", desc="Robust-scaled numerical DataFrame.")},
+        default={
+            "output": Port(
+                arr_type=ArrayLikeEnum.PANDAS,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.NUMERICAL,
+                data_shape="batch feature",
+                desc="Robust-scaled numerical DataFrame.",
+            )
+        },
     )
 
 
-class RobustScaler(TransformNode[pd.DataFrame, TabularDataContext, pd.DataFrame, TabularDataContext, _RobustScalerParams]):
+class RobustScaler(
+    TransformNode[
+        pd.DataFrame,
+        TabularDataContext,
+        pd.DataFrame,
+        TabularDataContext,
+        _RobustScalerParams,
+    ]
+):
     """Scale numerical columns using median and IQR, robust to outliers."""
 
     metadata = RobustScalerMetadata()
 
     def __init__(self, *, config: RobustScalerConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         self._params: _RobustScalerParams = {"median": {}, "iqr": {}}
         self._fitted = False
@@ -67,6 +106,7 @@ class RobustScaler(TransformNode[pd.DataFrame, TabularDataContext, pd.DataFrame,
 
         Args:
             data: Dictionary mapping port names to (DataFrame, context) tuples.
+
         """
         df, _ = data["input"]
         medians = df.median()
@@ -78,7 +118,9 @@ class RobustScaler(TransformNode[pd.DataFrame, TabularDataContext, pd.DataFrame,
             "iqr": {col: float(iqrs[col]) for col in df.columns},
         }
 
-    def transform(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
+    def transform(
+        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
+    ) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
         """Apply robust scaling to the input data.
 
         Args:
@@ -86,6 +128,7 @@ class RobustScaler(TransformNode[pd.DataFrame, TabularDataContext, pd.DataFrame,
 
         Returns:
             Dictionary mapping port names to (scaled DataFrame, context) tuples.
+
         """
         df, ctx = data["input"]
         median = pd.Series(self._params["median"])
@@ -103,6 +146,7 @@ class RobustScaler(TransformNode[pd.DataFrame, TabularDataContext, pd.DataFrame,
 
         Args:
             params: Dictionary with 'median' and 'iqr' keys mapping column names to values.
+
         """
         self._params = params
         self._fitted = True

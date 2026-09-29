@@ -4,6 +4,7 @@ CRUD operations live here.  All rendering (plain-text tables, notebook
 widgets) is provided by :class:`~nodeml.core.common.registry_display.RegistryDisplayMixin`.
 """
 
+from collections.abc import ItemsView, Iterator
 from typing import Any
 
 from nodeml.core.common.registry_display import RegistryDisplayMixin
@@ -19,6 +20,7 @@ class Registry(RegistryDisplayMixin):
     _column_order: list[str] = []
 
     def __init__(self, entity: str) -> None:
+        """Initialise an empty registry for *entity* entries."""
         self._entity = entity
         self._registry: dict[str, dict[str, Any]] = {}
 
@@ -101,11 +103,10 @@ class Registry(RegistryDisplayMixin):
 
         Raises:
             ValueError: If *name* is not currently registered.
+
         """
         if name not in self._registry:
-            message = (
-                f"{self._entity.capitalize()} '{name}' is not registered. Cannot unregister a non-existent {self._entity}."
-            )
+            message = f"{self._entity.capitalize()} '{name}' is not registered. Cannot unregister a non-existent {self._entity}."
             raise ValueError(message)
         del self._registry[name]
 
@@ -120,11 +121,10 @@ class Registry(RegistryDisplayMixin):
 
         Raises:
             ValueError: If *name* is not registered.
+
         """
         if name not in self._registry:
-            message = (
-                f"{self._entity.capitalize()} '{name}' is not registered. Please register the {self._entity} before trying to retrieve it."
-            )
+            message = f"{self._entity.capitalize()} '{name}' is not registered. Please register the {self._entity} before trying to retrieve it."
             raise ValueError(message)
         return self._registry[name]
 
@@ -140,20 +140,22 @@ class Registry(RegistryDisplayMixin):
         """Return the number of registered entries."""
         return len(self._registry)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[str]:
         """Iterate over registered entry names."""
         return iter(self._registry)
 
     def __str__(self) -> str:
+        """Return a one-line summary of the registered names."""
         return f"{self._entity.capitalize()}Registry with {len(self._registry)} registered {self._entity}s: {list(self._registry.keys())}"
 
     def __repr__(self) -> str:
+        """Return the full registry content."""
         return f"{self._entity.capitalize()}Registry(registry={self._registry})"
 
     def keys(self) -> list[str]:
         """Return a list of all registered entry names."""
         return list(self._registry.keys())
 
-    def items(self):
+    def items(self) -> ItemsView[str, dict[str, Any]]:
         """Return all ``(name, fields)`` pairs in the registry."""
         return self._registry.items()

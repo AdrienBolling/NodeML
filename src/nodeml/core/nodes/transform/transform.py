@@ -155,5 +155,6 @@ class TransformNode[D_I, D_C_I, D_O, D_C_O, P](Node[D_I, D_C_I, D_O, D_C_O], ABC
 
         """
         if hasattr(self, "_fitted") and not self._fitted:
-            raise ValueError("TransformNode must be fitted before calling transform.")
+            msg = "TransformNode must be fitted before calling transform."
+            raise ValueError(msg)
         return self.transform(data=data)

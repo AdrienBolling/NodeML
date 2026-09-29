@@ -29,7 +29,6 @@ from nodeml.core.pipeline.runners.smart_runner import (
     SmartRunnerConfig,
 )
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -100,9 +99,7 @@ def _payload_to_tuple(
     return df, ctx
 
 
-def _tuple_to_response(
-    array: ArrayLike, ctx: DataContext
-) -> PortResponse:
+def _tuple_to_response(array: ArrayLike, ctx: DataContext) -> PortResponse:
     """Convert a ``(array, context)`` tuple to a JSON-serializable response."""
     to_numpy = getattr(array, "to_numpy", None)
     np_arr = to_numpy() if callable(to_numpy) else np.asarray(array)
@@ -116,7 +113,7 @@ def _tuple_to_response(
     if np_arr.ndim == 1:
         np_arr = np_arr.reshape(-1, 1)
     records = [
-        {col: float(val) for col, val in zip(columns, row)}
+        {col: float(val) for col, val in zip(columns, row, strict=True)}
         for row in np_arr
     ]
     ctx_dump = ctx.dump_dict if hasattr(ctx, "dump_dict") else {}
@@ -141,8 +138,7 @@ def _serialize_outputs(
 ) -> dict[str, PortResponse]:
     """Convert runner outputs to JSON-serializable responses."""
     return {
-        name: _tuple_to_response(array, ctx)
-        for name, (array, ctx) in outputs.items()
+        name: _tuple_to_response(array, ctx) for name, (array, ctx) in outputs.items()
     }
 
 
@@ -182,14 +178,13 @@ class PipelineServing:
         params_dir: str | None = None,
         config: PipelineServingConfig | None = None,
     ) -> None:
+        """Build and compile the pipeline, load its parameters and create the runner."""
         serving_config = config or PipelineServingConfig()
         self._pipeline = Pipeline(config=pipeline_config)
         self._pipeline.compile()
         if params_dir is not None:
             self._pipeline.load_params_from_dir(params_dir)
-        self._runner = SmartRunner(
-            self._pipeline, config=serving_config.runner_config
-        )
+        self._runner = SmartRunner(self._pipeline, config=serving_config.runner_config)
         self._log = Logger(
             "nodeml.serving",
             pipeline_name=self._pipeline.name,
@@ -255,9 +250,7 @@ class PipelineServing:
         return _serialize_outputs(outputs)
 
     @_app.post("/evaluate")
-    def http_evaluate(
-        self, request: EvaluateRequest
-    ) -> dict[str, PortResponse]:
+    def http_evaluate(self, request: EvaluateRequest) -> dict[str, PortResponse]:
         """Run evaluation via HTTP.
 
         Accepts a JSON body matching :class:`EvaluateRequest` and returns

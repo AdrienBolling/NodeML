@@ -10,7 +10,6 @@ from __future__ import annotations
 import pytest
 
 from nodeml.core.nodes.registry.node_registry import NodeRegistry
-
 from tests.shims.nodes import (
     IdentityTransform,
     IdentityTransformConfig,

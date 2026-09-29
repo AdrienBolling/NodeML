@@ -4,12 +4,12 @@ Wraps ``sklearn.ensemble.GradientBoostingRegressor`` and exposes it as a NodeML
 :class:`~nodeml.core.nodes.models.model.Model` node.  The node expects two
 input ports:
 
-* ``X`` – feature matrix ``(batch, features)`` as a numpy array
-* ``y`` – target matrix ``(batch, targets)`` as a numpy array (training / evaluation only)
+* ``X`` - feature matrix ``(batch, features)`` as a numpy array
+* ``y`` - target matrix ``(batch, targets)`` as a numpy array (training / evaluation only)
 
 and emits one output port:
 
-* ``pred`` – predicted values ``(batch, targets)`` as a numpy array
+* ``pred`` - predicted values ``(batch, targets)`` as a numpy array
 
 Note: sklearn's GradientBoostingRegressor does not support multi-output
 regression natively, so the prediction is always 1-D and is reshaped to 2-D
@@ -19,20 +19,22 @@ for downstream consistency.
 from typing import Any, Literal
 
 import numpy as np
-from ray import tune
 from pydantic import Field
-from sklearn.ensemble import GradientBoostingRegressor as SklearnGradientBoostingRegressor
+from ray import tune
+from sklearn.ensemble import (
+    GradientBoostingRegressor as SklearnGradientBoostingRegressor,
+)
 
+from nodeml.components.utils.sklearn_params import (
+    get_sklearn_fitted_params,
+    set_sklearn_fitted_params,
+)
 from nodeml.core.common.data.data import (
     ArrayLikeEnum,
     DataCategoryEnum,
     DataStructureEnum,
     TabularDataContext,
     tabular_context_from_dict_dump,
-)
-from nodeml.components.utils.sklearn_params import (
-    get_sklearn_fitted_params,
-    set_sklearn_fitted_params,
 )
 from nodeml.core.common.enums import NodeExecutionMode
 from nodeml.core.nodes.models.model import (
@@ -44,6 +46,9 @@ from nodeml.core.nodes.models.model import (
 )
 from nodeml.core.nodes.node import Port
 
+# A 2-D (batch, 1) target is flattened to 1-D for scikit-learn.
+_MATRIX_NDIM = 2
+
 
 class GradientBoostingRegressorMetadata(ModelMetadata):
     """Metadata for the GradientBoostingRegressor model node."""
@@ -54,6 +59,10 @@ class GradientBoostingRegressorMetadata(ModelMetadata):
         "Builds an additive model of shallow decision trees trained "
         "sequentially to correct the residuals of the ensemble."
     )
+
+
+# A 2-D (batch, 1) target is flattened to 1-D for scikit-learn.
+_MATRIX_NDIM = 2
 
 
 class GradientBoostingRegressorHyperParameters(ModelHyperParameters):
@@ -78,7 +87,7 @@ class GradientBoostingRegressorHyperParameters(ModelHyperParameters):
         ge=1,
         description=(
             "Maximum depth of each individual regression tree. "
-            "Shallow trees (3–5) act as weak learners and are the typical "
+            "Shallow trees (3-5) act as weak learners and are the typical "
             "choice for gradient boosting."
         ),
     )
@@ -91,6 +100,10 @@ class GradientBoostingRegressorHyperParameters(ModelHyperParameters):
             "yield better generalisation."
         ),
     )
+
+
+# A 2-D (batch, 1) target is flattened to 1-D for scikit-learn.
+_MATRIX_NDIM = 2
 
 
 class GradientBoostingRegressorRunningConfig(ModelRunningConfig):
@@ -135,6 +148,10 @@ hyperparameter_space: dict[str, Any] = {
 
 # Type alias for the serialisable param dict used by get_params / set_params.
 type _GBRParams = dict[str, Any]
+
+
+# A 2-D (batch, 1) target is flattened to 1-D for scikit-learn.
+_MATRIX_NDIM = 2
 
 
 class GradientBoostingRegressorConfig(
@@ -187,6 +204,10 @@ class GradientBoostingRegressorConfig(
     )
 
 
+# A 2-D (batch, 1) target is flattened to 1-D for scikit-learn.
+_MATRIX_NDIM = 2
+
+
 class GradientBoostingRegressorNode(
     Model[
         np.ndarray,
@@ -228,14 +249,15 @@ class GradientBoostingRegressorNode(
     def fit(self, data: dict[str, tuple[np.ndarray, TabularDataContext]]) -> None:
         """Fit the Gradient Boosting Regressor on the provided *(X, y)* pair.
 
-        Parameters:
+        Args:
             data: Must contain keys ``"X"`` (features) and ``"y"`` (targets).
+
         """
         X, _ = data["X"]
         y, y_ctx = data["y"]
         # sklearn GBR does not support multi-output; pass y as-is (must be 1-D
         # or column vector).  If y is 2-D with a single column, ravel it.
-        if y.ndim == 2 and y.shape[1] == 1:
+        if y.ndim == _MATRIX_NDIM and y.shape[1] == 1:
             y = y.ravel()
         self._model.fit(X, y)
         self._target_context_dump = y_ctx.dump_dict
@@ -245,13 +267,14 @@ class GradientBoostingRegressorNode(
     ) -> dict[str, tuple[np.ndarray, TabularDataContext]]:
         """Predict using the fitted Gradient Boosting Regressor.
 
-        Parameters:
+        Args:
             data: Must contain key ``"X"`` (features).  ``"y"`` is ignored if
                 present (inference / evaluation phases).
 
         Returns:
             ``{"pred": (predictions, context)}`` where predictions is a
             2-D array ``(batch, 1)``.
+
         """
         X, _ = data["X"]
         pred: np.ndarray = self._model.predict(X)

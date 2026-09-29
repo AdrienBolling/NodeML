@@ -24,9 +24,7 @@ from nodeml.core.common.data.data import (
     TabularDataContext,
     tabular_context_from_dict_dump,
 )
-
 from tests.shims import tabular as tabular_shim
-
 
 # ---------------------------------------------------------------------------
 # TabularDataContext

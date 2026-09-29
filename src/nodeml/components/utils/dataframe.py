@@ -21,15 +21,15 @@ def filter_columns(
     ------
     ValueError
         If any of *requested_columns* are absent from *data*.
+
     """
     if requested_columns is None:
         return data
 
     missing = [col for col in requested_columns if col not in data.columns]
     if missing:
-        raise ValueError(
-            f"Requested columns not found in DataFrame: {missing}"
-        )
+        msg = f"Requested columns not found in DataFrame: {missing}"
+        raise ValueError(msg)
 
     return data[requested_columns]
 
@@ -52,14 +52,16 @@ def filter_dtypes(
     ------
     ValueError
         If no columns satisfy the dtype filter.
+
     """
     if requested_dtypes is None:
         return data
 
     selected = data.select_dtypes(include=requested_dtypes).columns.tolist()
     if not selected:
-        raise ValueError(
+        msg = (
             f"No columns in the DataFrame have the requested dtypes: {requested_dtypes}"
         )
+        raise ValueError(msg)
 
     return data[selected]

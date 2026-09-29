@@ -4,12 +4,12 @@ Wraps ``torchmetrics.R2Score`` and exposes it as a NodeML
 :class:`~nodeml.core.nodes.metrics.metric_node.MetricNode`.  The node expects
 two input ports:
 
-* ``pred``   – predicted values ``(batch, targets)`` as a numpy array
-* ``target`` – ground-truth values ``(batch, targets)`` as a numpy array
+* ``pred``   - predicted values ``(batch, targets)`` as a numpy array
+* ``target`` - ground-truth values ``(batch, targets)`` as a numpy array
 
 and emits one output port:
 
-* ``score`` – scalar metric value ``(1, 1)`` as a numpy array
+* ``score`` - scalar metric value ``(1, 1)`` as a numpy array
 
 R² = 1 indicates a perfect fit; R² = 0 means the model predicts no better
 than the target mean.  Negative values are possible when the model is
@@ -140,6 +140,7 @@ class R2(
     metadata = R2ScoreMetadata()
 
     def __init__(self, *, config: R2ScoreConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         rc = config.running_config
         self._metric = R2Score(
@@ -149,9 +150,7 @@ class R2(
 
     # --- MetricNode interface ------------------------------------------------
 
-    def update(
-        self, data: dict[str, tuple[np.ndarray, TabularDataContext]]
-    ) -> None:
+    def update(self, data: dict[str, tuple[np.ndarray, TabularDataContext]]) -> None:
         """Feed predictions and targets into the torchmetrics accumulator."""
         pred, _ = data["pred"]
         target, _ = data["target"]

@@ -21,11 +21,10 @@ Ports
 
 from typing import Any, Literal
 
-import numpy as np
 import torch
-import torch.nn as nn
-from ray import tune
 from pydantic import Field
+from ray import tune
+from torch import nn
 
 from nodeml.core.common.data.data import (
     ArrayLikeEnum,
@@ -163,7 +162,7 @@ _ACTIVATION_MAP: dict[str, type[nn.Module]] = {
 }
 
 
-def _build_cnn(
+def _build_cnn(  # noqa: PLR0913 - one argument per architecture setting
     in_features: int,
     out_features: int,
     num_conv_layers: int,

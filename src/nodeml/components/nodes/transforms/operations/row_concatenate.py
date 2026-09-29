@@ -64,14 +64,14 @@ class RowConcatenateConfig(
                 data_structure=DataStructureEnum.TABULAR,
                 data_category=DataCategoryEnum.MIXED,
                 data_shape="batch1 feature",
-                desc="First DataFrame (batch1 × feature).",
+                desc="First DataFrame (batch1 x feature).",
             ),
             "input_2": Port(
                 arr_type=ArrayLikeEnum.PANDAS,
                 data_structure=DataStructureEnum.TABULAR,
                 data_category=DataCategoryEnum.MIXED,
                 data_shape="batch2 feature",
-                desc="Second DataFrame (batch2 × feature).",
+                desc="Second DataFrame (batch2 x feature).",
             ),
         },
         description="Input ports: 'input_1' and 'input_2' (same-schema DataFrames).",
@@ -83,7 +83,7 @@ class RowConcatenateConfig(
                 data_structure=DataStructureEnum.TABULAR,
                 data_category=DataCategoryEnum.MIXED,
                 data_shape="_ feature",
-                desc="Row-concatenated DataFrame ((batch1+batch2) × feature).",
+                desc="Row-concatenated DataFrame ((batch1+batch2) x feature).",
             ),
         },
         description="Output ports: 'output' (concatenated DataFrame).",
@@ -104,7 +104,7 @@ class RowConcatenate(
     The output context is inherited from ``input_1``.  The row index of the
     output is reset to avoid duplicate index values.
 
-    **Schema validation** – both inputs must have identical column names,
+    **Schema validation** - both inputs must have identical column names,
     dtypes, and data categories.  A ``ValueError`` is raised otherwise.
     This is checked in both :meth:`fit` (early feedback) and
     :meth:`transform` (runtime safety).
@@ -113,13 +113,12 @@ class RowConcatenate(
     metadata = RowConcatenateMetadata()
 
     def __init__(self, *, config: RowConcatenateConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
 
     # --- TransformNode interface ------------------------------------------
 
-    def fit(
-        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
-    ) -> None:
+    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
         """Validate schema compatibility at fit time (no parameters to learn)."""
         _, ctx1 = data["input_1"]
         _, ctx2 = data["input_2"]
@@ -134,6 +133,7 @@ class RowConcatenate(
         ----------
         data:
             Must contain keys ``"input_1"`` and ``"input_2"``.
+
         """
         df1, ctx1 = data["input_1"]
         df2, ctx2 = data["input_2"]
@@ -144,9 +144,9 @@ class RowConcatenate(
 
     def get_params(self) -> None:
         """No learned parameters — returns ``None``."""
-        return None
+        return
 
-    def set_params(self, params: None) -> None:  # noqa: ARG002
+    def set_params(self, params: None) -> None:
         """No learned parameters to restore."""
 
     # --- Private helpers --------------------------------------------------
@@ -157,20 +157,23 @@ class RowConcatenate(
     ) -> None:
         """Raise ``ValueError`` if the two contexts have incompatible schemas."""
         if ctx1.columns != ctx2.columns:
-            raise ValueError(
+            msg = (
                 f"RowConcatenate: column mismatch between inputs.\n"
                 f"  input_1 columns: {ctx1.columns}\n"
                 f"  input_2 columns: {ctx2.columns}"
             )
+            raise ValueError(msg)
         if ctx1.dtypes != ctx2.dtypes:
-            raise ValueError(
+            msg = (
                 f"RowConcatenate: dtype mismatch between inputs.\n"
                 f"  input_1 dtypes: {ctx1.dtypes}\n"
                 f"  input_2 dtypes: {ctx2.dtypes}"
             )
+            raise ValueError(msg)
         if ctx1.categories != ctx2.categories:
-            raise ValueError(
+            msg = (
                 f"RowConcatenate: data-category mismatch between inputs.\n"
                 f"  input_1 categories: {ctx1.categories}\n"
                 f"  input_2 categories: {ctx2.categories}"
             )
+            raise ValueError(msg)

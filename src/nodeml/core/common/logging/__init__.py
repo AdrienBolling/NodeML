@@ -15,4 +15,4 @@ from nodeml.core.common.logging.logger import (
     configure,
 )
 
-__all__ = ["Logger", "JSONFormatter", "TextFormatter", "configure"]
+__all__ = ["JSONFormatter", "Logger", "TextFormatter", "configure"]

@@ -3,8 +3,8 @@
 Detects outliers as values whose absolute Z-score exceeds a configurable
 threshold.  Two strategies are available once an outlier is detected:
 
-* ``"remove"`` – drop the entire row (default).
-* ``"cap"``    – clip the value to the ±threshold boundary.
+* ``"remove"`` - drop the entire row (default).
+* ``"cap"``    - clip the value to the ±threshold boundary.
 
 Per-column **mean** and **std** are learned during :meth:`fit` and reused
 at :meth:`transform` time.  Columns with zero standard deviation are skipped
@@ -14,9 +14,9 @@ at :meth:`transform` time.  Columns with zero standard deviation are skipped
 from typing import Any, Literal, cast
 
 import numpy as np
-from ray import tune
 import pandas as pd
 from pydantic import Field
+from ray import tune
 
 from nodeml.components.utils.dataframe import filter_columns
 from nodeml.core.common.data.data import (
@@ -68,7 +68,7 @@ class ZScoreOutlierFilterHyperParameters(TransformHyperParameters):
         gt=0.0,
         description=(
             "Absolute Z-score above which a value is considered an outlier. "
-            "The standard choice is 3.0 (≈99.7 % of a Gaussian is within ±3σ). "
+            "The standard choice is 3.0 (≈99.7 % of a Gaussian is within ±3 sigma). "
             "Lower values are more aggressive."
         ),
     )
@@ -191,18 +191,20 @@ class ZScoreOutlierFilter(
     Learns per-column ``mean`` and ``std`` on the training split, then uses
     those statistics to detect and handle outliers at transform time.
 
-    Example
+    Example:
     -------
     >>> cfg = ZScoreOutlierFilterConfig(
     ...     hyperparameters=ZScoreOutlierFilterHyperParameters(zscore_cutoff=2.5),
     ... )
     >>> node = ZScoreOutlierFilter(config=cfg)
+
     """
 
     metadata = ZScoreOutlierFilterMetadata()
     hyperparameter_space = hyperparameter_space
 
     def __init__(self, *, config: ZScoreOutlierFilterConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         self._params: _ZScoreParams = {}
         # Must be set so node_transform blocks until fit has been called.
@@ -210,9 +212,7 @@ class ZScoreOutlierFilter(
 
     # --- TransformNode interface ------------------------------------------
 
-    def fit(
-        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
-    ) -> None:
+    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
         """Learn per-column mean and standard deviation from *data["input"]*."""
         df, _ = data["input"]
         target = self._select_columns(df)
@@ -223,7 +223,7 @@ class ZScoreOutlierFilter(
 
         self._params = {
             "mean": {col: float(means[col]) for col in target.columns},
-            "std":  {col: float(stds[col])  for col in target.columns},
+            "std": {col: float(stds[col]) for col in target.columns},
         }
 
     def transform(
@@ -237,6 +237,7 @@ class ZScoreOutlierFilter(
             Must contain key ``"input"``.  May contain ``"target"``
             (training / evaluation); if present, the same row removal
             is applied to the target DataFrame.
+
         """
         df, ctx = data["input"]
         outlier_mask = self._detect_outliers(df)
@@ -250,7 +251,9 @@ class ZScoreOutlierFilter(
             if port in data:
                 port_df, port_ctx = data[port]
                 if keep is not None:
-                    port_df = cast("pd.DataFrame", port_df.loc[keep]).reset_index(drop=True)
+                    port_df = cast("pd.DataFrame", port_df.loc[keep]).reset_index(
+                        drop=True
+                    )
                 outputs[port] = (port_df, port_ctx)
         return outputs
 
@@ -275,7 +278,7 @@ class ZScoreOutlierFilter(
         target = df[cols]
 
         mean = pd.Series(self._params["mean"])
-        std  = pd.Series(self._params["std"])
+        std = pd.Series(self._params["std"])
 
         # Columns with NaN std are treated as having Z-score 0 (no outliers).
         z_scores = target.sub(mean, axis=1).div(std, axis=1).fillna(0.0)
@@ -304,14 +307,13 @@ class ZScoreOutlierFilter(
             filtered = cast("pd.DataFrame", df.loc[~mask])
             return filtered.reset_index(drop=True)
 
-        # strategy == "cap"
+        # The remaining strategy is "cap".
         result = df.copy()
         k = self._config.hyperparameters.zscore_cutoff
         for col in outlier_mask.columns:
-            mu  = self._params["mean"][col]
+            mu = self._params["mean"][col]
             sig = self._params["std"].get(col, np.nan)
             if np.isnan(sig):
                 continue  # Column with zero std — nothing to cap.
             result[col] = result[col].clip(lower=mu - k * sig, upper=mu + k * sig)
         return result
-

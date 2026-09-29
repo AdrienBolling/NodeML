@@ -106,8 +106,10 @@ class TestConstructor:
         assert tuner.tuner is None
 
     def test_snapshot_isolated_from_original_pipeline(self) -> None:
-        """The tuner takes a config snapshot; later mutations to the original
-        pipeline must not propagate to the tuner's snapshot.
+        """Keep the tuner snapshot independent of the original pipeline.
+
+        The tuner takes a config snapshot; later changes to the original
+        pipeline must not propagate to the snapshot.
         """
         pipe = _build_filter_pipeline()
         tuner = RayPipelineTuner(pipe, config=RayPipelineTunerConfig())
@@ -179,18 +181,14 @@ class TestConvertMetrics:
         tuner = RayPipelineTuner(
             _build_filter_pipeline(), config=RayPipelineTunerConfig()
         )
-        out = tuner._convert_metrics(
-            {"mse": (pd.DataFrame([[0.42]]), _scalar_ctx())}
-        )
+        out = tuner._convert_metrics({"mse": (pd.DataFrame([[0.42]]), _scalar_ctx())})
         assert out == {"mse": pytest.approx(0.42)}
 
     def test_numpy_array_scalar_extraction(self) -> None:
         tuner = RayPipelineTuner(
             _build_filter_pipeline(), config=RayPipelineTunerConfig()
         )
-        out = tuner._convert_metrics(
-            {"mae": (np.array([[1.25]]), _scalar_ctx())}
-        )
+        out = tuner._convert_metrics({"mae": (np.array([[1.25]]), _scalar_ctx())})
         assert out == {"mae": pytest.approx(1.25)}
 
     def test_multiple_metrics_preserved(self) -> None:
@@ -212,9 +210,7 @@ class TestConvertMetrics:
         tuner = RayPipelineTuner(
             _build_filter_pipeline(), config=RayPipelineTunerConfig()
         )
-        out = tuner._convert_metrics(
-            {"mse": (pd.DataFrame([[0.5]]), _scalar_ctx())}
-        )
+        out = tuner._convert_metrics({"mse": (pd.DataFrame([[0.5]]), _scalar_ctx())})
         assert type(out["mse"]) is float
 
 
@@ -239,9 +235,7 @@ class TestTrainableFactory:
         tuner = RayPipelineTuner(
             _build_filter_pipeline(), config=RayPipelineTunerConfig()
         )
-        fn = tuner._trainable(
-            metric_aggregator=lambda metrics: sum(metrics.values())
-        )
+        fn = tuner._trainable(metric_aggregator=lambda metrics: sum(metrics.values()))
         assert callable(fn)
 
 

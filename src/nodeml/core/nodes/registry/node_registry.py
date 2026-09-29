@@ -22,6 +22,7 @@ class NodeRegistry(Registry):
     ]
 
     def __init__(self) -> None:
+        """Initialise an empty node registry."""
         super().__init__(entity="node")
 
     def register(

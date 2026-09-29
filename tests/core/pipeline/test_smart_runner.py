@@ -12,9 +12,7 @@ import numpy as np
 import pytest
 
 from nodeml.core.pipeline.runners.smart_runner import SmartRunner
-
 from tests.shims.pipelines import build_source_model_sink_pipeline
-
 
 # ---------------------------------------------------------------------------
 # Pre-compilation guard
@@ -38,9 +36,7 @@ class TestSmartRunnerPrecompilation:
 class TestSmartRunnerLifecycle:
     """End-to-end training → evaluation → inference over LinearRegression."""
 
-    def test_train_and_infer_recover_linear_targets(
-        self, regression_dataset
-    ) -> None:
+    def test_train_and_infer_recover_linear_targets(self, regression_dataset) -> None:
         (X_pair, y_pair, coefs) = regression_dataset
 
         pipeline = build_source_model_sink_pipeline(
@@ -52,9 +48,7 @@ class TestSmartRunnerLifecycle:
 
         # Train with y — infer with the same X.
         runner.train(input_data={"source": {"X": X_pair, "y": y_pair}})
-        preds = runner.infer(
-            input_data={"source": {"X": X_pair, "y": y_pair}}
-        )
+        preds = runner.infer(input_data={"source": {"X": X_pair, "y": y_pair}})
 
         assert "pred" in preds
         pred_df, _ = preds["pred"]
@@ -65,9 +59,7 @@ class TestSmartRunnerLifecycle:
             atol=0.1,
         )
         # True coefficients should be roughly recovered.
-        fitted = pipeline.node_objects["model"].get_params()[
-            "fitted_params"
-        ]
+        fitted = pipeline.node_objects["model"].get_params()["fitted_params"]
         np.testing.assert_allclose(fitted["coef_"].flatten(), coefs, atol=0.1)
 
     def test_evaluate_returns_low_mse(self, regression_dataset) -> None:
@@ -81,9 +73,7 @@ class TestSmartRunnerLifecycle:
         runner = SmartRunner(pipeline)
 
         runner.train(input_data={"source": {"X": X_pair, "y": y_pair}})
-        metrics = runner.evaluate(
-            input_data={"source": {"X": X_pair, "y": y_pair}}
-        )
+        metrics = runner.evaluate(input_data={"source": {"X": X_pair, "y": y_pair}})
 
         assert "metric" in metrics
         score_df, _ = metrics["metric"]
@@ -93,9 +83,7 @@ class TestSmartRunnerLifecycle:
 
 
 class TestSmartRunnerCaches:
-    def test_caches_are_cleared_between_phases(
-        self, regression_dataset
-    ) -> None:
+    def test_caches_are_cleared_between_phases(self, regression_dataset) -> None:
         (X_pair, y_pair, _coefs) = regression_dataset
         pipeline = build_source_model_sink_pipeline(with_metric=True)
         runner = SmartRunner(pipeline)
@@ -104,9 +92,7 @@ class TestSmartRunnerCaches:
         # Node outputs from the train phase live on the runner until the next
         # phase starts. We check the reset happens at the start of ``evaluate``.
         assert runner._node_outputs  # populated by train
-        runner.evaluate(
-            input_data={"source": {"X": X_pair, "y": y_pair}}
-        )
+        runner.evaluate(input_data={"source": {"X": X_pair, "y": y_pair}})
         # After evaluate, only the metric outputs survive on
         # ``_metric_node_outputs``; other node outputs were re-computed.
         assert "metric" in runner._metric_node_outputs

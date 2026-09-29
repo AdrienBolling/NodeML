@@ -226,9 +226,10 @@ class Node[D_I, D_C_I, D_O, D_C_O](ABC, metaclass=MetaPostInitHook):
         orig_init = cls.__init__
 
         @wraps(orig_init)
-        def wrapped_init(self, *args, **kwargs):
+        def wrapped_init(self: "Node", *args: Any, **kwargs: Any) -> None:
             if "config" not in kwargs:
-                raise TypeError("config must be passed as a keyword argument")
+                msg = "config must be passed as a keyword argument"
+                raise TypeError(msg)
             self._config = kwargs["config"]
             orig_init(self, *args, **kwargs)
 
@@ -248,7 +249,7 @@ class Node[D_I, D_C_I, D_O, D_C_O](ABC, metaclass=MetaPostInitHook):
                 message += f"Use 'class {cls.__name__}({bases[base_idx].__name__}, {base.__name__}):' instead of 'class {cls.__name__}({base.__name__}, {bases[base_idx].__name__}):'."
                 raise TypeError(message)
 
-    def __post_init__(self, *, config=None) -> None:
+    def __post_init__(self, *, config: NodeConfig | None = None) -> None:
         """Run common post-initialisation logic for all Nodes.
 
         Propagates initialisation up the MRO so that Mixin ``__post_init__``
@@ -259,14 +260,14 @@ class Node[D_I, D_C_I, D_O, D_C_O](ABC, metaclass=MetaPostInitHook):
 
         """
         try:
-            super().__init__(config=config)  # type: ignore
+            super().__init__(config=config)  # type: ignore[call-arg]
         except TypeError:  # In case we go back to object, object.__init__ doesn't take any argument, so we need to catch the TypeError and call it without arguments
-            super().__init__()  # type: ignore
+            super().__init__()  # type: ignore[misc]
         # If super has a post_init, call it
         if getattr(
             super(), "__post_init__", None
         ):  # INFO: Ignore the error here if pyright raises one, it's being dumb
-            super().__post_init__(config=config)  # type: ignore
+            super().__post_init__(config=config)  # type: ignore[misc]
             # INFO: Although it may seem useless, it's used in case of multiple inheritance with Mixins and such
 
     @property

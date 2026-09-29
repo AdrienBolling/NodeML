@@ -231,20 +231,20 @@ class ColumnOrder(
                 strict=True,
             ),
         )
+
     """
 
     metadata = ColumnOrderMetadata()
 
     def __init__(self, *, config: ColumnOrderConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         self._params: _ColumnOrderParams = {"column_order": []}
         self._fitted = False
 
     # --- TransformNode interface ------------------------------------------
 
-    def fit(
-        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
-    ) -> None:
+    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
         """Record the column order to enforce at transform time.
 
         Behaviour depends on the running config:
@@ -264,6 +264,7 @@ class ColumnOrder(
             order should be captured in learned mode). Only the
             DataFrame's columns attribute is read in learned mode; the
             data payload and context are otherwise ignored.
+
         """
         df, _ = data["input"]
         configured = self._config.running_config.column_order
@@ -309,6 +310,7 @@ class ColumnOrder(
             If the input is missing any column from the target order,
             or (when ``strict=True``) contains any column not in the
             target order.
+
         """
         df, ctx = data["input"]
         order = self._resolve_order()

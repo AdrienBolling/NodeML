@@ -2,9 +2,9 @@
 
 Fills missing values in categorical columns using one of two strategies:
 
-* ``"most_frequent"`` – replace NaNs with the most frequent value per column
+* ``"most_frequent"`` - replace NaNs with the most frequent value per column
   (learned at fit time).
-* ``"constant"``      – replace NaNs with a user-supplied constant string.
+* ``"constant"``      - replace NaNs with a user-supplied constant string.
 
 Per-column fill values are persisted via :meth:`get_params` /
 :meth:`set_params` for checkpointing.
@@ -118,27 +118,27 @@ class CategoricalImputation(
 ):
     """Fill missing values in categorical columns.
 
-    Example
+    Example:
     -------
     >>> cfg = CategoricalImputationConfig(
     ...     hyperparameters=CategoricalImputationHyperParameters(strategy="constant", value="N/A"),
     ... )
     >>> node = CategoricalImputation(config=cfg)
     >>> out = node.node_fit_transform({"input": (df, ctx)})
+
     """
 
     metadata = CategoricalImputationMetadata()
 
     def __init__(self, *, config: CategoricalImputationConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         self._params: _CategoricalImputationParams = {}
         self._fitted = False
 
     # --- TransformNode interface ------------------------------------------
 
-    def fit(
-        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
-    ) -> None:
+    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
         """Learn per-column fill values from the training data."""
         df, _ = data["input"]
         hp = self._config.hyperparameters
@@ -146,11 +146,13 @@ class CategoricalImputation(
         match hp.strategy:
             case "most_frequent":
                 self._params = {
-                    col: str(df[col].mode().iloc[0]) if not df[col].mode().empty else hp.value
+                    col: str(df[col].mode().iloc[0])
+                    if not df[col].mode().empty
+                    else hp.value
                     for col in df.columns
                 }
             case "constant":
-                self._params = {col: hp.value for col in df.columns}
+                self._params = dict.fromkeys(df.columns, hp.value)
 
     def transform(
         self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]

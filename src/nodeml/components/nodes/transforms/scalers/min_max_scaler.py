@@ -9,12 +9,18 @@ import pandas as pd
 from pydantic import Field
 
 from nodeml.core.common.data.data import (
-    ArrayLikeEnum, DataCategoryEnum, DataStructureEnum, TabularDataContext,
+    ArrayLikeEnum,
+    DataCategoryEnum,
+    DataStructureEnum,
+    TabularDataContext,
 )
 from nodeml.core.nodes.node import Port
 from nodeml.core.nodes.transform.transform import (
-    TransformConfig, TransformHyperParameters, TransformMetadata,
-    TransformNode, TransformRunningConfig,
+    TransformConfig,
+    TransformHyperParameters,
+    TransformMetadata,
+    TransformNode,
+    TransformRunningConfig,
 )
 
 type _MinMaxScalerParams = dict[str, dict[str, float]]
@@ -36,25 +42,56 @@ class MinMaxScalerHyperParameters(TransformHyperParameters):
     """No tuneable hyperparameters."""
 
 
-class MinMaxScalerConfig(TransformConfig[MinMaxScalerRunningConfig, MinMaxScalerHyperParameters]):
+class MinMaxScalerConfig(
+    TransformConfig[MinMaxScalerRunningConfig, MinMaxScalerHyperParameters]
+):
     """Configuration for the MinMaxScaler node."""
 
-    hyperparameters: MinMaxScalerHyperParameters = Field(default_factory=MinMaxScalerHyperParameters)
-    running_config: MinMaxScalerRunningConfig = Field(default_factory=MinMaxScalerRunningConfig)
+    hyperparameters: MinMaxScalerHyperParameters = Field(
+        default_factory=MinMaxScalerHyperParameters
+    )
+    running_config: MinMaxScalerRunningConfig = Field(
+        default_factory=MinMaxScalerRunningConfig
+    )
     in_ports: dict[str, Port] = Field(
-        default={"input": Port(arr_type=ArrayLikeEnum.PANDAS, data_structure=DataStructureEnum.TABULAR, data_category=DataCategoryEnum.NUMERICAL, data_shape="batch feature", desc="Numerical DataFrame to scale.")},
+        default={
+            "input": Port(
+                arr_type=ArrayLikeEnum.PANDAS,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.NUMERICAL,
+                data_shape="batch feature",
+                desc="Numerical DataFrame to scale.",
+            )
+        },
     )
     out_ports: dict[str, Port] = Field(
-        default={"output": Port(arr_type=ArrayLikeEnum.PANDAS, data_structure=DataStructureEnum.TABULAR, data_category=DataCategoryEnum.NUMERICAL, data_shape="batch feature", desc="Min-max scaled numerical DataFrame.")},
+        default={
+            "output": Port(
+                arr_type=ArrayLikeEnum.PANDAS,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.NUMERICAL,
+                data_shape="batch feature",
+                desc="Min-max scaled numerical DataFrame.",
+            )
+        },
     )
 
 
-class MinMaxScaler(TransformNode[pd.DataFrame, TabularDataContext, pd.DataFrame, TabularDataContext, _MinMaxScalerParams]):
+class MinMaxScaler(
+    TransformNode[
+        pd.DataFrame,
+        TabularDataContext,
+        pd.DataFrame,
+        TabularDataContext,
+        _MinMaxScalerParams,
+    ]
+):
     """Scale numerical columns to the [0, 1] range using per-column min and max."""
 
     metadata = MinMaxScalerMetadata()
 
     def __init__(self, *, config: MinMaxScalerConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         self._params: _MinMaxScalerParams = {"min": {}, "max": {}}
         self._fitted = False
@@ -64,6 +101,7 @@ class MinMaxScaler(TransformNode[pd.DataFrame, TabularDataContext, pd.DataFrame,
 
         Args:
             data: Dictionary mapping port names to (DataFrame, context) tuples.
+
         """
         df, _ = data["input"]
         mins = df.min()
@@ -73,7 +111,9 @@ class MinMaxScaler(TransformNode[pd.DataFrame, TabularDataContext, pd.DataFrame,
             "max": {col: float(maxs[col]) for col in df.columns},
         }
 
-    def transform(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
+    def transform(
+        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
+    ) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
         """Apply min-max scaling to the input data.
 
         Args:
@@ -81,6 +121,7 @@ class MinMaxScaler(TransformNode[pd.DataFrame, TabularDataContext, pd.DataFrame,
 
         Returns:
             Dictionary mapping port names to (scaled DataFrame, context) tuples.
+
         """
         df, ctx = data["input"]
         col_min = pd.Series(self._params["min"])
@@ -99,6 +140,7 @@ class MinMaxScaler(TransformNode[pd.DataFrame, TabularDataContext, pd.DataFrame,
 
         Args:
             params: Dictionary with 'min' and 'max' keys mapping column names to values.
+
         """
         self._params = params
         self._fitted = True

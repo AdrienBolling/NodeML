@@ -4,12 +4,12 @@ Wraps ``sklearn.ensemble.GradientBoostingClassifier`` and exposes it as a NodeML
 :class:`~nodeml.core.nodes.models.model.Model` node.  The node expects two
 input ports:
 
-* ``X`` – feature matrix ``(batch, features)`` as a numpy array
-* ``y`` – label vector ``(batch, 1)`` as a numpy array (training / evaluation only)
+* ``X`` - feature matrix ``(batch, features)`` as a numpy array
+* ``y`` - label vector ``(batch, 1)`` as a numpy array (training / evaluation only)
 
 and emits one output port:
 
-* ``pred`` – predicted class probabilities ``(batch, num_classes)`` as a numpy array
+* ``pred`` - predicted class probabilities ``(batch, num_classes)`` as a numpy array
 
 The classifier outputs probabilities via ``predict_proba``, which always
 returns a 2-D array ``(batch, num_classes)``.
@@ -18,20 +18,22 @@ returns a 2-D array ``(batch, num_classes)``.
 from typing import Any, Literal
 
 import numpy as np
-from ray import tune
 from pydantic import Field
-from sklearn.ensemble import GradientBoostingClassifier as SklearnGradientBoostingClassifier
+from ray import tune
+from sklearn.ensemble import (
+    GradientBoostingClassifier as SklearnGradientBoostingClassifier,
+)
 
+from nodeml.components.utils.sklearn_params import (
+    get_sklearn_fitted_params,
+    set_sklearn_fitted_params,
+)
 from nodeml.core.common.data.data import (
     ArrayLikeEnum,
     DataCategoryEnum,
     DataStructureEnum,
     TabularDataContext,
     tabular_context_from_dict_dump,
-)
-from nodeml.components.utils.sklearn_params import (
-    get_sklearn_fitted_params,
-    set_sklearn_fitted_params,
 )
 from nodeml.core.common.enums import NodeExecutionMode
 from nodeml.core.nodes.models.model import (
@@ -77,7 +79,7 @@ class GradientBoostingClassifierHyperParameters(ModelHyperParameters):
         ge=1,
         description=(
             "Maximum depth of each individual decision tree. "
-            "Shallow trees (3–5) act as weak learners and are the typical "
+            "Shallow trees (3-5) act as weak learners and are the typical "
             "choice for gradient boosting."
         ),
     )
@@ -224,8 +226,9 @@ class GradientBoostingClassifierNode(
     def fit(self, data: dict[str, tuple[np.ndarray, TabularDataContext]]) -> None:
         """Fit the Gradient Boosting Classifier on the provided *(X, y)* pair.
 
-        Parameters:
+        Args:
             data: Must contain keys ``"X"`` (features) and ``"y"`` (labels).
+
         """
         X, _ = data["X"]
         y, y_ctx = data["y"]
@@ -238,13 +241,14 @@ class GradientBoostingClassifierNode(
     ) -> dict[str, tuple[np.ndarray, TabularDataContext]]:
         """Predict class probabilities using the fitted Gradient Boosting Classifier.
 
-        Parameters:
+        Args:
             data: Must contain key ``"X"`` (features).  ``"y"`` is ignored if
                 present (inference / evaluation phases).
 
         Returns:
             ``{"pred": (probabilities, context)}`` where probabilities is a
             2-D array ``(batch, num_classes)``.
+
         """
         X, _ = data["X"]
         pred: np.ndarray = self._model.predict_proba(X)

@@ -43,6 +43,10 @@ _MLFLOW_FIELD_DEFAULTS: dict[str, Any] = {
 }
 
 
+# Runner outputs are (array, context) pairs.
+_ARRAY_CONTEXT_LEN = 2
+
+
 class MLFlowLoggerWrapperConfig(BaseSettings):
     """Configuration for the :class:`MLFlowLoggerWrapper`.
 
@@ -152,6 +156,10 @@ class MLFlowLoggerWrapperConfig(BaseSettings):
         )
 
 
+# Runner outputs are (array, context) pairs.
+_ARRAY_CONTEXT_LEN = 2
+
+
 class MLFlowLoggerWrapper:
     """Wrap a :class:`PipelineRunner` with MLflow lifecycle logging.
 
@@ -221,7 +229,8 @@ class MLFlowLoggerWrapper:
 
     def train(
         self,
-        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]] | None = None,
+        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]]
+        | None = None,
     ) -> None:
         """Start an MLflow run, log params, train, and log timing.
 
@@ -250,7 +259,9 @@ class MLFlowLoggerWrapper:
                 self._runner.train(input_data=input_data)
                 duration_s = time.perf_counter() - t0
                 mlflow.log_metric("train_duration_s", duration_s)
-                self._log.info("Training complete", train_duration_s=round(duration_s, 3))
+                self._log.info(
+                    "Training complete", train_duration_s=round(duration_s, 3)
+                )
             else:
                 self._runner.train(input_data=input_data)
                 self._log.info("Training complete")
@@ -261,7 +272,8 @@ class MLFlowLoggerWrapper:
 
     def evaluate(
         self,
-        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]] | None = None,
+        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]]
+        | None = None,
     ) -> Mapping[str, tuple[ArrayLike, DataContext]]:
         """Evaluate the pipeline and log all resulting metrics.
 
@@ -296,7 +308,8 @@ class MLFlowLoggerWrapper:
 
     def infer(
         self,
-        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]] | None = None,
+        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]]
+        | None = None,
     ) -> Mapping[str, tuple[ArrayLike, DataContext]]:
         """Run inference via the underlying runner (no MLflow logging).
 
@@ -400,7 +413,7 @@ class MLFlowLoggerWrapper:
         """
         if isinstance(value, (int, float)):
             return float(value)
-        if isinstance(value, tuple) and len(value) == 2:  # (array, context)  # noqa: PLR2004
+        if isinstance(value, tuple) and len(value) == _ARRAY_CONTEXT_LEN:
             array, _ = value
             if isinstance(array, pd.DataFrame):
                 array = array.to_numpy()

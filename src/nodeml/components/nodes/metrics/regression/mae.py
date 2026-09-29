@@ -4,12 +4,12 @@ Wraps ``torchmetrics.MeanAbsoluteError`` and exposes it as a NodeML
 :class:`~nodeml.core.nodes.metrics.metric_node.MetricNode`.  The node expects
 two input ports:
 
-* ``pred``   – predicted values ``(batch, targets)`` as a numpy array
-* ``target`` – ground-truth values ``(batch, targets)`` as a numpy array
+* ``pred``   - predicted values ``(batch, targets)`` as a numpy array
+* ``target`` - ground-truth values ``(batch, targets)`` as a numpy array
 
 and emits one output port:
 
-* ``score`` – scalar metric value ``(1, 1)`` as a numpy array
+* ``score`` - scalar metric value ``(1, 1)`` as a numpy array
 
 MAE is more robust to outliers than MSE and reports error in the same
 units as the target variable.
@@ -119,6 +119,7 @@ class MAE(
     metadata = MAEMetadata()
 
     def __init__(self, *, config: MAEConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         rc = config.running_config
         self._metric = MeanAbsoluteError(
@@ -127,9 +128,7 @@ class MAE(
 
     # --- MetricNode interface ------------------------------------------------
 
-    def update(
-        self, data: dict[str, tuple[np.ndarray, TabularDataContext]]
-    ) -> None:
+    def update(self, data: dict[str, tuple[np.ndarray, TabularDataContext]]) -> None:
         """Feed predictions and targets into the torchmetrics accumulator."""
         pred, _ = data["pred"]
         target, _ = data["target"]

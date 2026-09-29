@@ -119,6 +119,7 @@ class TabularCSVFetcher(
     metadata = TabularCSVFetcherMetadata()
 
     def __init__(self, *, config: TabularCSVFetcherConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         self._df: pd.DataFrame | None = None
         self._context: TabularDataContext | None = None

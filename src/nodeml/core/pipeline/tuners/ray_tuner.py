@@ -35,9 +35,7 @@ class RayPipelineTuner:
     the search to Ray Tune, converting metrics to a scalar objective.
     """
 
-    def __init__(
-        self, pipeline: Pipeline, *, config: RayPipelineTunerConfig
-    ) -> None:
+    def __init__(self, pipeline: Pipeline, *, config: RayPipelineTunerConfig) -> None:
         """Initialize the RayPipelineTuner.
 
         Args:
@@ -111,7 +109,7 @@ class RayPipelineTuner:
         )
         return hp_space
 
-    def tune(  # noqa: PLR0913
+    def tune(
         self,
         param_space: dict[str, Any],
         *,
@@ -178,16 +176,12 @@ class RayPipelineTuner:
             mode=tune_config.mode,
             optimization_metric=optimization_metric,
             metric_aggregator=(
-                metric_aggregator.__name__
-                if metric_aggregator is not None
-                else None
+                metric_aggregator.__name__ if metric_aggregator is not None else None
             ),
             has_input_data=input_data is not None,
         ) as scoped:
             self._results = tuner.fit()
-            num_errored = len(
-                [r for r in self._results if r.error is not None]
-            )
+            num_errored = len([r for r in self._results if r.error is not None])
             scoped.info(
                 "Tuning results summary",
                 num_trials=len(self._results),

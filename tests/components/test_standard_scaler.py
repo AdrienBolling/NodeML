@@ -9,7 +9,6 @@ from nodeml.components.nodes.transforms.scalers.standard_scaler import (
     StandardScaler,
     StandardScalerConfig,
 )
-
 from tests.shims.tabular import numerical_pair
 
 

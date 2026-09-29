@@ -4,17 +4,15 @@ Wraps ``torchmetrics.MeanSquaredError`` and exposes it as a NodeML
 :class:`~nodeml.core.nodes.metrics.metric_node.MetricNode`.  The node expects
 two input ports:
 
-* ``pred``   – predicted values ``(batch, targets)`` as a numpy array
-* ``target`` – ground-truth values ``(batch, targets)`` as a numpy array
+* ``pred``   - predicted values ``(batch, targets)`` as a numpy array
+* ``target`` - ground-truth values ``(batch, targets)`` as a numpy array
 
 and emits one output port:
 
-* ``score`` – scalar metric value ``(1, 1)`` as a numpy array
+* ``score`` - scalar metric value ``(1, 1)`` as a numpy array
 
 Setting ``squared=False`` in the running config turns this into RMSE.
 """
-
-from typing import Literal
 
 import numpy as np
 import torch
@@ -128,6 +126,7 @@ class MSE(
     metadata = MSEMetadata()
 
     def __init__(self, *, config: MSEConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
         rc = config.running_config
         self._metric = MeanSquaredError(
@@ -137,9 +136,7 @@ class MSE(
 
     # --- MetricNode interface ------------------------------------------------
 
-    def update(
-        self, data: dict[str, tuple[np.ndarray, TabularDataContext]]
-    ) -> None:
+    def update(self, data: dict[str, tuple[np.ndarray, TabularDataContext]]) -> None:
         """Feed predictions and targets into the torchmetrics accumulator."""
         pred, _ = data["pred"]
         target, _ = data["target"]
@@ -152,7 +149,9 @@ class MSE(
         """Compute MSE (or RMSE) and return a ``(1, 1)`` result array."""
         value = self._metric.compute().item()
         self._metric.reset()
-        return _scalar_result(value, "mse" if self._config.running_config.squared else "rmse")
+        return _scalar_result(
+            value, "mse" if self._config.running_config.squared else "rmse"
+        )
 
 
 def _scalar_result(

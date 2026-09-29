@@ -4,12 +4,12 @@ Wraps ``sklearn.ensemble.RandomForestRegressor`` and exposes it as a NodeML
 :class:`~nodeml.core.nodes.models.model.Model` node.  The node expects two
 input ports:
 
-* ``X`` – feature matrix ``(batch, features)`` as a numpy array
-* ``y`` – target matrix ``(batch, targets)`` as a numpy array (training / evaluation only)
+* ``X`` - feature matrix ``(batch, features)`` as a numpy array
+* ``y`` - target matrix ``(batch, targets)`` as a numpy array (training / evaluation only)
 
 and emits one output port:
 
-* ``pred`` – predicted values ``(batch, targets)`` as a numpy array
+* ``pred`` - predicted values ``(batch, targets)`` as a numpy array
 
 sklearn handles multi-output regression transparently when ``y`` is 2-D, so
 no extra wrapping is needed.

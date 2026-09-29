@@ -18,7 +18,6 @@ from nodeml.core.common.typechecking.typeguards import (
     has_running_config,
     is_list,
 )
-
 from tests.shims.nodes import (
     ConstantSource,
     ConstantSourceConfig,

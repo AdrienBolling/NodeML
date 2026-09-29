@@ -128,23 +128,22 @@ class TabularTrainValSplit:
 
     def _all_refs(self) -> list[tuple[str, str]]:
         """Flatten config into ``(node_name, port_name)`` pairs."""
-        refs: list[tuple[str, str]] = []
-        for node_name, ports in self._config.data_nodes:
-            for port in ports:
-                refs.append((node_name, port))
+        refs = self._data_refs()
         if self._config.target_nodes is not None:
-            for node_name, ports in self._config.target_nodes:
-                for port in ports:
-                    refs.append((node_name, port))
+            refs.extend(
+                (node_name, port)
+                for node_name, ports in self._config.target_nodes
+                for port in ports
+            )
         return refs
 
     def _data_refs(self) -> list[tuple[str, str]]:
         """Only the data (non-target) references."""
-        refs: list[tuple[str, str]] = []
-        for node_name, ports in self._config.data_nodes:
-            for port in ports:
-                refs.append((node_name, port))
-        return refs
+        return [
+            (node_name, port)
+            for node_name, ports in self._config.data_nodes
+            for port in ports
+        ]
 
     # ------------------------------------------------------------------
     # Validation
@@ -220,7 +219,9 @@ class TabularTrainValSplit:
                 best_train = train_idx
                 best_val = val_idx
 
-        assert best_train is not None and best_val is not None
+        if best_train is None or best_val is None:
+            msg = "No split was evaluated; kldiv_trials must be at least 1."
+            raise ValueError(msg)
         return best_train, best_val
 
     def _gather_features(

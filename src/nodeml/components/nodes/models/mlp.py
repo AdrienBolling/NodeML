@@ -14,11 +14,10 @@ and emits one output port:
 
 from typing import Any, Literal
 
-import numpy as np
 import torch
-import torch.nn as nn
-from ray import tune
 from pydantic import Field
+from ray import tune
+from torch import nn
 
 from nodeml.core.common.data.data import (
     ArrayLikeEnum,

@@ -75,14 +75,14 @@ class FeatureConcatenateConfig(
                 data_structure=DataStructureEnum.TABULAR,
                 data_category=DataCategoryEnum.MIXED,
                 data_shape="batch feature1",
-                desc="First DataFrame (batch × feature1).",
+                desc="First DataFrame (batch x feature1).",
             ),
             "input_2": Port(
                 arr_type=ArrayLikeEnum.PANDAS,
                 data_structure=DataStructureEnum.TABULAR,
                 data_category=DataCategoryEnum.MIXED,
                 data_shape="batch feature2",
-                desc="Second DataFrame (batch × feature2).",
+                desc="Second DataFrame (batch x feature2).",
             ),
         },
         description="Input ports: 'input_1' and 'input_2' (DataFrames to concatenate).",
@@ -94,7 +94,7 @@ class FeatureConcatenateConfig(
                 data_structure=DataStructureEnum.TABULAR,
                 data_category=DataCategoryEnum.MIXED,
                 data_shape="batch _",
-                desc="Column-concatenated DataFrame (batch × (feature1+feature2)).",
+                desc="Column-concatenated DataFrame (batch x (feature1+feature2)).",
             ),
         },
         description="Output ports: 'output' (concatenated DataFrame).",
@@ -116,17 +116,18 @@ class FeatureConcatenate(
     built by merging the two input contexts in order
     (``input_1`` columns first, then ``input_2`` columns).
 
-    **Duplicate column guard** – if both inputs share any column name the
+    **Duplicate column guard** - if both inputs share any column name the
     operation raises a ``ValueError`` rather than silently producing
     ambiguous columns.
 
-    **Row-count check** – controlled by
+    **Row-count check** - controlled by
     ``running_config.check_row_count`` (enabled by default).
     """
 
     metadata = FeatureConcatenateMetadata()
 
     def __init__(self, *, config: FeatureConcatenateConfig) -> None:
+        """Initialise the node with its configuration."""
         self._config = config
 
     # --- TransformNode interface ------------------------------------------

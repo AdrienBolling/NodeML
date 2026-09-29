@@ -7,7 +7,9 @@ outlier.  Two strategies handle the outliers:
 * ``"remove"`` removes the rows that have too many outlier features.  Row
   removal happens only in the training mode.  In the inference and
   evaluation modes, the filter passes all rows through unchanged, so that
-  each input row gets a prediction and a score.
+  each input row gets a prediction and a score.  The runner sets the
+  mode.  Outside a runner, call
+  ``node.set_execution_mode(NodeExecutionMode.TRAINING)`` to remove rows.
 * ``"cap"`` clips each outlier value to its bounds, in all modes.
 
 The ``target`` and ``sliced`` ports carry frames whose rows follow the rows
@@ -168,7 +170,7 @@ class OutlierFilter(
     """Base class for the outlier filters.
 
     A subclass learns its statistics in :meth:`_fit_statistics` and gives
-    the bounds of each column in :meth:`_bounds`.  This class does the
+    the bounds of each column in :meth:`_raw_bounds`.  This class does the
     detection, the row removal and the capping.
     """
 

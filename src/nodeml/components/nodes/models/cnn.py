@@ -199,11 +199,13 @@ def _build_cnn(  # noqa: PLR0913 - one argument per architecture setting
     in_channels = 1
     seq_len = in_features
     for _ in range(num_conv_layers):
-        # Pad to preserve length before pooling shrinks it.
+        # The padding keeps the length for an odd kernel size.  An even
+        # kernel size adds one position.
         padding = kernel_size // 2
         conv_layers.append(
             nn.Conv1d(in_channels, num_filters, kernel_size, padding=padding)
         )
+        seq_len = seq_len + 2 * padding - kernel_size + 1
         conv_layers.append(act_cls())
         if dropout > 0:
             conv_layers.append(nn.Dropout(dropout))

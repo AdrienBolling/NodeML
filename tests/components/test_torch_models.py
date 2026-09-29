@@ -174,6 +174,22 @@ class TestDocumentation:
         assert "classification" not in metadata.description
 
 
+class TestCNNArchitecture:
+    @pytest.mark.parametrize("pooling", ["max", "avg", "none"])
+    @pytest.mark.parametrize("kernel_size", [1, 2, 3, 4, 5, 8])
+    def test_any_kernel_size_trains_and_predicts(
+        self, kernel_size: int, pooling: str
+    ) -> None:
+        X_pair, y_pair = _pairs()
+        node = _node(
+            "CNN",
+            {"num_conv_layers": 2, "kernel_size": kernel_size, "pooling": pooling},
+            epochs=1,
+        )
+        node.fit(_tensor_inputs(X_pair, y_pair))
+        assert _predict(node).shape == (32, 1)
+
+
 # ---------------------------------------------------------------------------
 # Save and load
 # ---------------------------------------------------------------------------

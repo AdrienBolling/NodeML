@@ -10,6 +10,7 @@ from __future__ import annotations
 import numpy as np
 
 from nodeml.core.common.data.data import NumericalData, TabularDataContext
+from nodeml.core.nodes.metrics.metric_node import MetricNode
 from tests.shims.nodes import SumCountMetric, SumCountMetricConfig
 
 
@@ -48,3 +49,25 @@ class TestMetricNodeFlow:
         metric.update(batch_b)
         score, _ = metric.compute()["score"]
         np.testing.assert_array_equal(score, np.array([[8.0]]))
+
+
+class _SuperInitMetric(MetricNode):
+    """Metric that uses the base constructor, as other node types do."""
+
+    def __init__(self, *, config: SumCountMetricConfig) -> None:
+        super().__init__(config=config)
+
+    def update(self, data: dict) -> None:
+        pass
+
+    def compute(self) -> dict:
+        return {}
+
+
+class TestMetricNodeInit:
+    def test_base_init_takes_only_the_config(self) -> None:
+        config = SumCountMetricConfig()
+        metric = _SuperInitMetric(config=config)
+
+        assert metric.config is config
+        assert metric.running_config is config.running_config

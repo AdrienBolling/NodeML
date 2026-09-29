@@ -1,10 +1,8 @@
 """Module for the Metric node wrapper."""
 
 from abc import abstractmethod
-from typing import TypeVar
 
 from pydantic import BaseModel, model_validator
-from torchmetrics import Metric
 
 from nodeml.core.common.enums import NodeExecutionMode
 from nodeml.core.nodes.node import Node, NodeConfig, NodeMetadata, NodeType, Port
@@ -14,10 +12,7 @@ class MetricNodeRunningConfig(BaseModel):
     """Running configuration for a Metric Node in a NodeML Pipeline."""
 
 
-R = TypeVar("R", bound=MetricNodeRunningConfig)
-
-
-class MetricNodeConfig[R](NodeConfig):
+class MetricNodeConfig[R: MetricNodeRunningConfig](NodeConfig):
     """Configuration for a Metric Node in a NodeML Pipeline.
 
     Generic over ``R``, which must be a :class:`MetricNodeRunningConfig`
@@ -69,8 +64,14 @@ class MetricNode[D_I, D_C_I, D_O, D_C_O](Node[D_I, D_C_I, D_O, D_C_O]):
 
     metadata = MetricNodeMetadata()
 
-    def __init__(self, *, config: MetricNodeConfig, metric: Metric) -> None:
-        """Initialize the Metric Node with the given configuration and metric."""
+    def __init__(self, *, config: MetricNodeConfig) -> None:
+        """Initialise the Metric Node with the given configuration.
+
+        Args:
+            config: Metric configuration with ports and running config.
+
+        """
+        self._config = config
 
     # --- Methods to implement for the metric node ---
 
@@ -91,6 +92,18 @@ class MetricNode[D_I, D_C_I, D_O, D_C_O](Node[D_I, D_C_I, D_O, D_C_O]):
             Mapping of output port name to ``(data, context)`` tuples.
 
         """
+
+    # --- API convenience ---
+
+    @property
+    def running_config(self) -> MetricNodeRunningConfig | None:
+        """Return the running configuration of the metric."""
+        return self._config.running_config
+
+    @property
+    def config(self) -> MetricNodeConfig:
+        """Return the full configuration of the metric."""
+        return self._config
 
     # --- Node API override don't touch that ---
 

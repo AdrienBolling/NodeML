@@ -18,7 +18,10 @@ Setting ``squared=False`` in the running config turns this into RMSE.
 from pydantic import Field
 from torchmetrics import MeanSquaredError, Metric
 
-from nodeml.components.nodes.metrics.base import score_out_ports
+from nodeml.components.nodes.metrics.base import (
+    TorchMetricRunningConfig,
+    score_out_ports,
+)
 from nodeml.components.nodes.metrics.regression.base import (
     RegressionMetricNode,
     regression_in_ports,
@@ -26,7 +29,6 @@ from nodeml.components.nodes.metrics.regression.base import (
 from nodeml.core.nodes.metrics.metric_node import (
     MetricNodeConfig,
     MetricNodeMetadata,
-    MetricNodeRunningConfig,
 )
 from nodeml.core.nodes.node import Port
 
@@ -42,7 +44,7 @@ class MSEMetadata(MetricNodeMetadata):
     )
 
 
-class MSERunningConfig(MetricNodeRunningConfig):
+class MSERunningConfig(TorchMetricRunningConfig):
     """Run-time options for the MSE metric node."""
 
     squared: bool = Field(

@@ -27,21 +27,23 @@ import torch
 from pydantic import Field
 from torchmetrics import Metric
 
-from nodeml.components.nodes.metrics.base import TorchMetricNode
+from nodeml.components.nodes.metrics.base import (
+    TorchMetricNode,
+    TorchMetricRunningConfig,
+)
 from nodeml.core.common.data.data import (
     ArrayLikeEnum,
     DataCategoryEnum,
     DataStructureEnum,
 )
 from nodeml.core.common.exceptions import NodeConfigError, NodeInputError
-from nodeml.core.nodes.metrics.metric_node import MetricNodeRunningConfig
 from nodeml.core.nodes.node import Port
 
 # Class probabilities of a binary classifier: negative, positive.
 _BINARY_PROBA_COLUMNS = 2
 
 
-class ClassificationRunningConfig(MetricNodeRunningConfig):
+class ClassificationRunningConfig(TorchMetricRunningConfig):
     """Run-time options that all classification metric nodes share."""
 
     task: Literal["binary", "multiclass"] = Field(
@@ -305,7 +307,15 @@ class ClassificationMetricNode(TorchMetricNode):
             )
             raise NodeInputError(msg)
         labels = values[:, 0]
-        if not _is_integer(labels) and not np.array_equal(labels, np.round(labels)):
+        if _is_integer(labels):
+            return torch.from_numpy(labels.astype(np.int64))
+        if np.isnan(labels).any():
+            msg = (
+                f"{type(self).__name__}: the '{port}' port has NaN class labels. "
+                "Set nan_policy='omit' to drop these rows."
+            )
+            raise NodeInputError(msg)
+        if not np.array_equal(labels, np.round(labels)):
             msg = (
                 f"{type(self).__name__}: the '{port}' port expects integer class "
                 "labels."

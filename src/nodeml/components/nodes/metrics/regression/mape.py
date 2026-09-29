@@ -23,10 +23,14 @@ and emits one output port:
 """
 
 import numpy as np
+import torch
 from pydantic import Field
 from torchmetrics import MeanAbsolutePercentageError, Metric
 
-from nodeml.components.nodes.metrics.base import MetricData, score_out_ports
+from nodeml.components.nodes.metrics.base import (
+    TorchMetricRunningConfig,
+    score_out_ports,
+)
 from nodeml.components.nodes.metrics.regression.base import (
     RegressionMetricNode,
     regression_in_ports,
@@ -35,7 +39,6 @@ from nodeml.core.common.logging import Logger
 from nodeml.core.nodes.metrics.metric_node import (
     MetricNodeConfig,
     MetricNodeMetadata,
-    MetricNodeRunningConfig,
 )
 from nodeml.core.nodes.node import Port
 
@@ -58,7 +61,7 @@ class MAPEMetadata(MetricNodeMetadata):
     )
 
 
-class MAPERunningConfig(MetricNodeRunningConfig):
+class MAPERunningConfig(TorchMetricRunningConfig):
     """Run-time options for the MAPE metric node."""
 
 
@@ -99,15 +102,23 @@ class MAPE(RegressionMetricNode):
         """
         return MeanAbsolutePercentageError()
 
-    def update(self, data: MetricData) -> None:
-        """Feed a batch into the metric, with a warning for zero targets.
+    def _to_tensors(
+        self, pred: np.ndarray, target: np.ndarray
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Convert the inputs, with a warning for zero targets.
+
+        :meth:`update` calls this method after it drops the NaN rows, so
+        the warning counts only the rows that the metric scores.
 
         Args:
-            data: Mapping with the ``"pred"`` and ``"target"`` ports.
+            pred: Predictions, ``(batch, targets)``.
+            target: Targets, ``(batch, targets)``.
+
+        Returns:
+            The ``(pred, target)`` tensors.
 
         """
-        target, _ = data["target"]
-        near_zero = int(np.count_nonzero(np.abs(np.asarray(target)) < _EPSILON))
+        near_zero = int(np.count_nonzero(np.abs(target) < _EPSILON))
         if near_zero:
             _log.warning(
                 "MAPE targets contain zeros. The metric divides by epsilon "
@@ -115,4 +126,4 @@ class MAPE(RegressionMetricNode):
                 zero_targets=near_zero,
                 epsilon=_EPSILON,
             )
-        super().update(data)
+        return super()._to_tensors(pred, target)

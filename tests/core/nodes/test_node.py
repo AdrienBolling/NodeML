@@ -111,3 +111,56 @@ class TestDataSourceBase:
         source.set_payload(payload)
         result = source.node_transform({})
         assert result["output"] is payload
+
+
+class TestNodeLifecycle:
+    def test_fresh_node_has_the_default_execution_mode(self) -> None:
+        node = IdentityTransform(config=IdentityTransformConfig())
+        assert node.execution_mode == NodeExecutionMode.DEFAULT
+
+    def test_mixin_init_errors_are_not_hidden(self) -> None:
+        # Before the fix, Node caught this TypeError and called the mixin
+        # again without the config, so the error was hidden.
+        calls: list[object] = []
+
+        class _FailingMixin:
+            _is_mixin = True
+
+            def __init__(self, *, config: object = None) -> None:
+                calls.append(config)
+                if config is not None:
+                    msg = "mixin failure"
+                    raise TypeError(msg)
+
+        class _Mixed(IdentityTransform, _FailingMixin):
+            pass
+
+        cfg = IdentityTransformConfig()
+        with pytest.raises(TypeError, match="mixin failure"):
+            _Mixed(config=cfg)
+        assert calls == [cfg]
+
+    def test_mixin_init_receives_the_config(self) -> None:
+        seen: list[object] = []
+
+        class _RecordingMixin:
+            _is_mixin = True
+
+            def __init__(self, *, config: object = None) -> None:
+                seen.append(config)
+
+        class _Mixed(IdentityTransform, _RecordingMixin):
+            pass
+
+        cfg = IdentityTransformConfig()
+        _Mixed(config=cfg)
+        assert seen == [cfg]
+
+    def test_mixin_before_node_base_is_rejected(self) -> None:
+        class _Mixin:
+            _is_mixin = True
+
+        with pytest.raises(TypeError, match="must be placed after"):
+
+            class _Wrong(_Mixin, IdentityTransform):  # type: ignore[misc]
+                pass

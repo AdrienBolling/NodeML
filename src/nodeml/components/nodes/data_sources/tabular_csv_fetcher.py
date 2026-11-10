@@ -146,12 +146,12 @@ class TabularCSVFetcher(
     Example::
 
         >>> cfg = TabularCSVFetcherConfig(
-    ...     running_config=TabularCSVFetcherRunningConfig(
-    ...         csv_path="data/train.csv",
-    ...         context_path="data/train_context.json",
-    ...     ),
-    ... )
-    >>> node = TabularCSVFetcher(config=cfg)
+        ...     running_config=TabularCSVFetcherRunningConfig(
+        ...         csv_path="data/train.csv",
+        ...         context_path="data/train_context.json",
+        ...     ),
+        ... )
+        >>> node = TabularCSVFetcher(config=cfg)
 
     """
 

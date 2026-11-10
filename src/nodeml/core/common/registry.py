@@ -77,7 +77,8 @@ class Registry(RegistryDisplayMixin):
     def register_entry(self, name: str, **fields: Any) -> None:
         """Fully generic registration.
 
-        Example:
+        Example::
+
             registry.register_entry(
                 "resize",
                 metric_class=ResizeMetric,

@@ -2,6 +2,8 @@
 
 A Python framework for building, training, and deploying **ML pipelines as directed acyclic graphs (DAGs)**. Each node in the graph — data source, transform, model, or metric — communicates through typed ports, and the runner handles execution order, mode-aware pruning, and progress tracking automatically.
 
+**Documentation:** <https://adrienbolling.github.io/NodeML/>
+
 ## Key ideas
 
 - **Pipeline = DAG.** Nodes declare typed input/output ports; edges wire them together. The framework resolves execution order via topological sort.
@@ -126,11 +128,13 @@ Run the tests:
 uv run pytest
 ```
 
-Build the docs:
+Build the docs (the build runs the example notebooks):
 
 ```bash
-uv run --group docs sphinx-build docs docs/_build
+uv run --group docs --extra counterfactuals sphinx-build -W --keep-going docs docs/_build/html
 ```
+
+See the [Development](https://adrienbolling.github.io/NodeML/development.html) page for how the documentation is organised.
 
 ## License
 

@@ -51,9 +51,11 @@ dev = [
     "ty>=0.0.1a24",
 ]
 docs = [
+    "myst-nb>=1.4.0",
+    "pydata-sphinx-theme>=0.24.0",
     "sphinx>=8.0",
-    "sphinx-rtd-theme>=3.0",
-    "sphinx-autodoc-typehints>=2.0",
+    "sphinx-copybutton>=0.5.2",
+    "sphinx-design>=0.7.0",
 ]
 
 [tool.pytest.ini_options]
@@ -112,7 +114,7 @@ max-args = 8
   "RUF043",  # Allow regex patterns in pytest.raises
   "SLF001",  # Tests may inspect private members
 ]
-"docs/conf.py" = ["INP001"]  # Sphinx config is not a package module
+"docs/**/*.py" = ["INP001"]  # Sphinx config and extensions are not package modules
 "examples/**/*.ipynb" = [
   "D",       # Notebook cells need no docstrings
   "S101",    # Examples may assert results

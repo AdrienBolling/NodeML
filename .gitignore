@@ -27,8 +27,9 @@ wheels/
 # Jupyter Notebook tests
 ipynb/
 
-# Sphinx build output
+# Sphinx build output and generated API pages
 docs/_build/
+docs/api/generated/
 # Virtual environments
 .venv/
 

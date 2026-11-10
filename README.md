@@ -131,3 +131,7 @@ Build the docs:
 ```bash
 uv run --group docs sphinx-build docs docs/_build
 ```
+
+## License
+
+NodeML is under the MIT License. See [LICENSE](LICENSE).

@@ -3,6 +3,8 @@ name = "nodeml"
 version = "0.1.0"
 description = "Build, train, tune and serve ML pipelines as typed DAGs of nodes."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
   "beartype>=0.22.9",

@@ -387,7 +387,7 @@ class Pipeline:
 
     @property
     def file_basename(self) -> str:
-        """File-safe base name: ``{sanitized_name}_v{version}``.
+        """The file-safe base name, ``{sanitized_name}_v{version}``.
 
         Used by :meth:`save_params_to_dir`, :meth:`save_config_to_dir`,
         and :meth:`save_html_to_dir` so every artefact shares the same

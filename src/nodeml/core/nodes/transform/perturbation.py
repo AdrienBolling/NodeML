@@ -11,7 +11,7 @@ example right after the data source.  It has two behaviours:
   the input port is not active in inference, so the runner does not run the
   nodes before the PerturbationNode.  In inference, the node returns the
   rows given with :meth:`PerturbationNode.set_rows`.  The
-  :class:`~nodeml.core.pipeline.counterfactuals.CounterfactualEvaluator`
+  :class:`~nodeml.core.pipeline.counterfactuals.evaluator.CounterfactualEvaluator`
   uses this mode: each prediction that a counterfactual method asks for
   runs only the part of the pipeline after the PerturbationNode.
 

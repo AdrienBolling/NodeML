@@ -90,4 +90,7 @@ class NodeRegistry(Registry):
         return self.get(name)["node_class"]
 
 
+#: The global node registry. Importing ``nodeml`` registers the built-in nodes in it.
+#:
+#: :meta hide-value:
 NODE_REGISTRY = NodeRegistry()
